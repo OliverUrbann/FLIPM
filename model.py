@@ -1,3 +1,43 @@
+# Author:       Oliver Urbann
+# E-Mail:       oliver.urbann@tu-dortmund.de
+# Requirements: Python 3.4+, scipy, numpy, matplotlib, tkinter
+# Usage:        python model.py
+#
+# This script is the implementation of the FLIP model as proposed by
+# Urbann et al. [1]. Details about the gains used in the GUI can be
+# found in [1] and [2].
+#
+# Two functions can be executed:
+#
+# Menu Commands->Simulate for an example of the model. At 0.5s a
+# force is applied such that both masses begin to oscillate. Nothing 
+# else happens here.
+#
+# Menu Commands->Controller runs a walk with a preview controller.
+# Gains for controller are calculate before, using the given values.
+#
+# Values like masses, gravity, height, etc. can be selected manually.
+# For a quick simulation or walk default values can be loaded by
+# clicking the corresponding menu item before "Simulate" or 
+# "Controller" is clicked. 
+#
+# Additionally, the gains and the computed controller gains can be
+# saved for an application of the controller implemented on a 
+# physical robot.
+#
+# "python model.py -c" and "python model.py -r" creates figures
+# shown in [1]. Before this can be done run 
+# "mkdir paper && mkdir paper/build". 
+#
+# [1] Flexible Linear Inverted Pendulum Model for Cost-Effective 
+#     Biped Robots
+#     Oliver Urbann, Ingmar Schwarz, Matthias Hofmann
+#     Humanoid Robots (Humanoids), 2015 15th IEEE-RAS International
+#     Conference on, 2015, pp. 128–131 
+# [2] Observer-based biped walking control, a sensor fusion approach
+#     Oliver Urbann, Stefan Tasse
+#     Autonomous Robots 35.1 (2013) pp. 37–49. Springer US, 2013
+
 import numpy as np
 import scipy as sp
 import scipy.linalg
@@ -8,9 +48,15 @@ import tkinter.filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 from matplotlib.figure import Figure
 import sys
-from OpenGL.GLUT import *
-from OpenGL.GLU import *
-from OpenGL.GL import *
+
+__author__ = "Oliver Urbann"
+__copyright__ = "Copyright 2015, Oliver Urbann"
+__credits__ = ["Oliver Urbann"]
+__license__ = "GPL"
+__version__ = "1.0.0"
+__maintainer__ = "Oliver Urbann"
+__email__ = "oliver.urbann@tu-dortmund.de"
+__status__ = "Production"
 
 mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams['ps.fonttype'] = 42
@@ -41,13 +87,13 @@ controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100,
 def main():
   noGui = False
   for arg in sys.argv:
-    if arg == '-c':
+    if arg == '-c': # Plot figure as shown in [1]
       fig1 = plt.figure(figsize=(6, 2), dpi=150)
       ax1 = fig1.add_subplot(111)
       control(controllerDefault[4], int(sp.floor(controllerDefault[10])), controllerDefault[11], ax1, *gains(*controllerDefault[:11]))
       plt.savefig("paper/build/FLIPMex" + ".pdf", format='pdf', bbox_inches='tight')
       noGui = True
-    if arg == '-r':
+    if arg == '-r': # Plot another figure shown in [1]
       fig1 = plt.figure(figsize=(6, 2), dpi=150)
       ax1 = fig1.add_subplot(111)
       g = gains(*simDefault[:11])
@@ -77,6 +123,7 @@ def getValues(d):
           int(sp.floor(d["N"].get())),
           d["End"].get())
 def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
+  # Calculation of controller gains as explained in [2].
   A = np.array(
       [[      1,     dt, dt**2/2,       0,        0,       0 ],
        [      0,      1,      dt,       0,        0,       0 ],
@@ -181,70 +228,6 @@ class StepControl:
     v = v + c * x - pref(0)
         
 class FLIPMApp(tkinter.Frame):
-  def timer(self, v):
-    global rotx,roty
-    #roty += 1
-    glutPostRedisplay()
-    glutTimerFunc(10,self.timer,10)
-    return
-    
-  def display(self):
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-    glLoadIdentity()
-    gluLookAt(1,1,1,0,0,0,0,0,1)
-    #glRotatef(roty,0,1,0)
-    #glRotatef(rotx,1,0,0)
-    glCallList(1)
-    glutSwapBuffers()
-    return
-    
-  def startgl(self):
-    name = "FLIPM"
-    height = 400
-    width = 400
-
-    #glutInit(name)
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
-    glutInitWindowSize(height,width)
-    glutCreateWindow(name)
-    glClearColor(0.,0.,0.,1.)
-    
-    # setup display list
-    glNewList(1,GL_COMPILE)
-    glPushMatrix()
-    glScalef(2.,1.,1.)
-    glutSolidCube(0.05)
-    glPopMatrix()
-    glTranslatef(0.,0,0.27) #move to where we want to put object
-    glutSolidSphere(0.05,10,10) # make radius 1 sphere of res 10x10
-    glEndList()
-    
-    #setup lighting
-    glEnable(GL_CULL_FACE)
-    glEnable(GL_DEPTH_TEST)
-    glEnable(GL_LIGHTING)
-    lightZeroPosition = [10.,4.,10.,1.]
-    lightZeroColor = [0.8,1.0,0.8,1.0] # greenish
-    glLightfv(GL_LIGHT0, GL_POSITION, lightZeroPosition)
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, lightZeroColor)
-    glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.1)
-    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.05)
-    glEnable(GL_LIGHT0)
-    
-    #setup cameras
-    glMatrixMode(GL_PROJECTION)
-    gluPerspective(40.,1.,1.,40.)
-    glMatrixMode(GL_MODELVIEW)
-    gluLookAt(0,0,10,0,0,0,0,1,0)
-    glPushMatrix()
-    
-    #setup callbacks
-    glutDisplayFunc(self.display)
-    glutTimerFunc(10,self.timer,1)
-    self.controller = [StepControl(int(sp.floor(self.values["N"].get())), *gains(*getValues(self.values)[:11]))]
-    
-    glutMainLoop()
-    
   def __init__(self, master=None):
     tkinter.Frame.__init__(self, master)
     self.createWidgets()
@@ -272,7 +255,6 @@ class FLIPMApp(tkinter.Frame):
     self.menuCommand.add_command(label = "Simulate", command = self.onSim)
     self.menuCommand.add_command(label = "Load Simulation Default", command = self.onSimDef)
     self.menuCommand.add_command(label = "Controller", command = self.onController)
-    #self.menuCommand.add_command(label = "Controller 3D", command = self.onControl3D)
     self.menuCommand.add_command(label = "Load Controller Default", command = self.onControllerDef)
     self.menuBar.add_cascade(label = "File", menu = self.menuFile)
     self.menuBar.add_cascade(label = "Commands", menu = self.menuCommand)
