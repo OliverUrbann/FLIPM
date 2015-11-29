@@ -83,12 +83,17 @@ mpl.rcParams['ps.fonttype'] = 42
 
 simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
 controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10,
-                     np.matrix(np.array([[10**-0, 0, 0],
-                                        [0, 1, 0],
-                                        [0, 0, 10**2]])),
-                     np.matrix(np.array([[10**17,  0],
-                                        [0,  10**4]])),
+                     np.matrix(np.array([[10**-0, 0, 0, 0 ,0 ,0 ],
+                                         [0, 1, 0, 0, 0, 0],
+                                         [0, 0, 10**2, 0, 0, 0],
+                                         [0, 0, 0, 10**2, 0, 0],
+                                         [0, 0, 0, 0, 1, 0],
+                                         [0, 0, 0, 0 ,0 ,1]])),
+                     np.matrix(np.array([[10**17,  0, 0],
+                                         [0,  10**4, 0],
+                                         [0,  0, 10**4]])),
                      100, 5)
+error = np.matrix([0.0, 0.0, 0.0]).transpose()
 
 def main():
   noGui = False
@@ -130,7 +135,7 @@ def getValues(d):
           d["RO"].getMatrix(),
           int(sp.floor(d["N"].get())),
           d["End"].get())
-def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
+def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
   # Calculation of controller gains as explained in [2].
   A = np.array(
       [[      1,     dt, dt**2/2,       0,        0,       0 ],
@@ -158,12 +163,24 @@ def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   Gx = (R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * Pt * Ft
   Gi = (R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * Pt * It
   Ac = At - Bt * (R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * Pt * At
-  M = -Ac.transpose() * Pt * It
+  X = -Ac.transpose() * Pt * It
   Gd = [-Gi]
   for i in range(1, N):
-    Gd.append((R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * M)
-    M = Ac.transpose() * M
-  return A, b, c, Gi, Gx, Gd
+    Gd.append((R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * X)
+    X = Ac.transpose() * X
+
+  ##########################
+  # Observer implementation
+  ##########################
+  Cm = np.matrix(np.zeros((3, 6)))  # Was ich von dem Zustand messen kann
+  Cm[0,0] = 1
+  Cm[1,2] = 1    
+  Cm[2,3] = 1  
+  
+  
+  L,S,e = dlrq(A.transpose(),Cm.transpose(), Ql, RO)
+  L = L.transpose()
+  return A, b, c, Gi, Gx, Gd, L
 
 def dlrq(A,B,Q,R) :                                         # http://de.mathworks.com/help/control/ref/dlqr.html
   S = np.matrix(sp.linalg.solve_discrete_are(A, B, Q, R))   # solve the discrete-time Riccati equation
@@ -171,7 +188,7 @@ def dlrq(A,B,Q,R) :                                         # http://de.mathwork
   e = np.matrix(sp.linalg.eigvals(A - B*K))                 # calculate eigenvalues
   return K,S,e
 
-def control(dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with controller
+def control(dt, N, end, error, plotarea, A, b, c, Gi, Gx, Gd, L): # a walk with controller
   x1out = list()
   x2out = list()
   zmpout = list()
@@ -184,7 +201,7 @@ def control(dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with controller
     for t2 in range(0, N):
       s += Gd[t2] * pref(t+t2*dt)
     u = -Gi * v - Gx * x - s
-    x = A * x + b * u
+    x = A * x + b * u + L*e(error,t)
     v = v + c * x - pref(t)
     x1out.append(x[0].item())
     x2out.append(x[3].item())
@@ -216,6 +233,13 @@ def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   plotarea.legend(prop={'size':11}, borderpad=0.1, loc="lower right")
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
+
+def e(error, t): #Error
+  if t >=2 and t<2.1:
+    return error
+  else:
+    return np.matrix([0.0, 0.0, 0.0]).transpose()
+
 def pref(t):
   if t < 1:
     return 0
@@ -247,15 +271,24 @@ class MatrixInput(tkinter.Frame):
         self.matrix = {}
         self.m = m
         self.n = n
-        tkinter.Label(frame, text=text, width= 10).grid(row = 0)
+        
+        for m in range(self.m+1):
+            if m==0:
+              tkinter.Label(frame, text=text, width= 8,  font = ('bold') ).grid(row = m,  column=0)
+            else:
+              tkinter.Label(frame, text=m, width= 8).grid(row = m, column=0)
+        for n in range(self.n+1):
+            if n!=0:
+              tkinter.Label(frame, text=n, width= 8).grid(row = 0, column=n)      
+              
         for m in range(self.m):
             for n in range(self.n):
                 v = tkinter.DoubleVar()
-                s = tkinter.Spinbox(frame, textvariable = v, format = "%10.4f")
+                s = tkinter.Spinbox(frame, textvariable = v, width = 10)
                 s["to"] = max
                 s["from"] = min
                 s["increment"] = inc
-                s.grid(row=m, column=n+1, stick="nsew")
+                s.grid(row=m+1, column=n+1, stick="nsew")
                 self.matrix[(m,n)] = v
         frame.pack(fill = "both")
 
@@ -264,9 +297,9 @@ class MatrixInput(tkinter.Frame):
         for m in range(self.m):
             temp_row = []
             for n in range(self.n):
-                temp_row.append(self.matrix[(m,n)])
+                temp_row.append(self.matrix[(m,n)].get())
             result.append(temp_row)
-        return result
+        return np.matrix(result)
     
     def setMatrix(self, setMatrix):
         for m in range(self.m):
@@ -320,11 +353,24 @@ class FLIPMApp(tkinter.Frame):
     self.addValue("R", 10**-10, 10**10, 1)
     self.observerframe = tkinter.Frame(self)
     self.observerframe.pack(side = "left", fill = "both")
-    self.values["Ql"] = MatrixInput(self.observerframe,"Ql", 3, 3, 10**-10, 10**10, 1)
-    self.values["RO"] = MatrixInput(self.observerframe,"RO", 2, 2, 10**-10, 10**20, 1)
+    self.values["Ql"] = MatrixInput(self.observerframe,"Ql", 6, 6, 10**10, 10**10, 100)
+    self.values["RO"] = MatrixInput(self.observerframe,"RO", 3, 3, 10**-10, 10**20, 100)
     self.addValue("N", 1, 1000, 1)
-    self.addValue("End", 0, 100, 0.5)    
-    f = Figure(figsize=(10,8), dpi=50, facecolor='white')
+    self.addValue("End", 0, 100, 0.5)
+    self.values["e"] = MatrixInput(self.observerframe,"Error", 3, 1, -10**3, 10**3, 0.001)
+    ###########
+    # Buttons #
+    ###########
+    frame = tkinter.Frame(self.observerframe)
+    frame.pack(fill = "x")
+    b = tkinter.Button(frame, text="Load Controller Default", command=self.onControllerDef)
+    b.pack(fill = "x")
+    b = tkinter.Button(frame, text="Simulate", command=self.onController)
+    b.pack(fill = "x")
+    ###########
+    # Buttons #
+    ###########    
+    f = Figure(figsize=(15,12), dpi=50, facecolor='white')
     self.a = f.add_subplot(111)
     self.canvas = FigureCanvasTkAgg(f, master=self)
     self.canvas.show()
@@ -374,7 +420,7 @@ N = {};
     
   def onController(self, export = False):
     self.a.cla();
-    control(self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.a, *gains(*getValues(self.values)[:11]))
+    control(self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.values["e"].getMatrix(), self.a, *gains(*getValues(self.values)[:13]))
     self.canvas.show()
   def onControllerDef(self):
     self.setValues(*controllerDefault)
