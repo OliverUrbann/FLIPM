@@ -82,7 +82,13 @@ mpl.rcParams['ps.fonttype'] = 42
 # Damping has the same derivation
 
 simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
-controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100, 5)
+controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10,
+                     np.matrix(np.array([[10**-0, 0, 0],
+                                        [0, 1, 0],
+                                        [0, 0, 10**2]])),
+                     np.matrix(np.array([[10**17,  0],
+                                        [0,  10**4]])),
+                     100, 5)
 
 def main():
   noGui = False
@@ -120,6 +126,8 @@ def getValues(d):
           d["Qe"].get(),
           d["Qx"].get(),
           d["R"].get(),
+          d["Ql"].getMatrix(),
+          d["RO"].getMatrix(),
           int(sp.floor(d["N"].get())),
           d["End"].get())
 def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
@@ -226,6 +234,38 @@ class StepControl:
     u = -Gi * v - Gx * x - s
     x = A * x + b * u
     v = v + c * x - pref(0)
+
+class MatrixInput(tkinter.Frame):
+    def __init__(self, observerframe, text, m, n, min, max, inc):
+        frame = tkinter.Frame(observerframe)
+        self.matrix = {}
+        self.m = m
+        self.n = n
+        tkinter.Label(frame, text=text, width= 10).grid(row = 0)
+        for m in range(self.m):
+            for n in range(self.n):
+                v = tkinter.DoubleVar()
+                s = tkinter.Spinbox(frame, textvariable = v, format = "%10.4f")
+                s["to"] = max
+                s["from"] = min
+                s["increment"] = inc
+                s.grid(row=m, column=n+1, stick="nsew")
+                self.matrix[(m,n)] = v
+        frame.pack(fill = "both")
+
+    def getMatrix(self):
+        result = []
+        for m in range(self.m):
+            temp_row = []
+            for n in range(self.n):
+                temp_row.append(self.matrix[(m,n)])
+            result.append(temp_row)
+        return result
+    
+    def setMatrix(self, setMatrix):
+        for m in range(self.m):
+            for n in range(self.n):
+                self.matrix[(m,n)].set(setMatrix[m,n])
         
 class FLIPMApp(tkinter.Frame):
   def __init__(self, master=None):
@@ -272,6 +312,10 @@ class FLIPMApp(tkinter.Frame):
     self.addValue("Qx", 10**-10, 10**10, 1)
     self.addValue("Qe", 10**-10, 10**10, 1)
     self.addValue("R", 10**-10, 10**10, 1)
+    self.observerframe = tkinter.Frame(self)
+    self.observerframe.pack(side = "left", fill = "both")
+    self.values["Ql"] = MatrixInput(self.observerframe,"Ql", 3, 3, 10**-10, 10**10, 1)
+    self.values["RO"] = MatrixInput(self.observerframe,"RO", 2, 2, 10**-10, 10**20, 1)
     self.addValue("N", 1, 1000, 1)
     self.addValue("End", 0, 100, 0.5)    
     f = Figure(figsize=(10,8), dpi=50, facecolor='white')
@@ -330,7 +374,7 @@ N = {};
     self.setValues(*controllerDefault)
   def onSimDef(self):
     self.setValues(*simDefault)
-  def setValues(self, m, M, g, z_h, dt, D, E, Qe, Qx, R, N, end):
+  def setValues(self, m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N, end):
     self.values["Small Mass"].set(m)
     self.values["Large Mass"].set(M)
     self.values["Gravity"].set(g)
@@ -341,6 +385,8 @@ N = {};
     self.values["Qe"].set(Qe)
     self.values["Qx"].set(Qx)
     self.values["R"].set(R)
+    self.values["Ql"].setMatrix(Ql)
+    self.values["RO"].setMatrix(RO)
     self.values["N"].set(N)
     self.values["End"].set(end)
     
