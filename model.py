@@ -165,6 +165,12 @@ def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
     M = Ac.transpose() * M
   return A, b, c, Gi, Gx, Gd
 
+def dlrq(A,B,Q,R) :                                         # http://de.mathworks.com/help/control/ref/dlqr.html
+  S = np.matrix(sp.linalg.solve_discrete_are(A, B, Q, R))   # solve the discrete-time Riccati equation
+  K = (B.transpose()*S*B + R) ** -1 * (B.transpose()*S*A)   # calculate gain matrix k
+  e = np.matrix(sp.linalg.eigvals(A - B*K))                 # calculate eigenvalues
+  return K,S,e
+
 def control(dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with controller
   x1out = list()
   x2out = list()
