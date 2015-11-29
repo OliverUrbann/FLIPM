@@ -81,7 +81,17 @@ mpl.rcParams['ps.fonttype'] = 42
 
 # Damping has the same derivation
 
-simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
+simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10,
+              np.matrix(np.array([[1, 0, 0, 0 ,0 ,0 ],
+                                  [0, 1, 0, 0, 0, 0],
+                                  [0, 0, 1, 0, 0, 0],
+                                  [0, 0, 0, 1, 0, 0],
+                                  [0, 0, 0, 0, 1, 0],
+                                  [0, 0, 0, 0 ,0 ,1]])),
+              np.matrix(np.array([[1,  0, 0],
+                                  [0,  1, 0],
+                                  [0,  0, 1]])),              
+              100, 5)
 controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10,
                      np.matrix(np.array([[10**-0, 0, 0, 0 ,0 ,0 ],
                                          [0, 1, 0, 0, 0, 0],
@@ -378,10 +388,11 @@ class FLIPMApp(tkinter.Frame):
     toolbar = NavigationToolbar2TkAgg( self.canvas, self )
     toolbar.update()
     self.canvas._tkcanvas.pack(side=tkinter.TOP,  expand=1)
-  def onSave(self): # m, M, g, z_h, dt, D, E, Qe, Qx, R, N
+  def onSave(self): # m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, R0, N
     f = tkinter.filedialog.asksaveasfile()
     v = getValues(self.values)
-    g = gains(*v[:11]) # A, b, c, Gi, Gx, Gd
+    g = gains(*v[:13]) # A, b, c, Gi, Gx, Gd, L
+    
     s = \
 """
 A = {{ content = [{}]; }};
@@ -390,6 +401,8 @@ c = {{ content = [{}]; }};
 Gi = {};
 Gx = {{ content = [{}]; }};
 Gd = {{ content = [{}]; }};
+L = {{ content = [{}]; }};
+error = {{ content = [{}]; }};
 m = {};
 M = {};
 g = {};
@@ -400,6 +413,8 @@ E = {};
 Qe = {};
 Qx = {};
 R = {};
+Ql = {{ content = [{}]; }};
+RO = {{ content = [{}]; }};
 N = {};
 """.format(",".join(map(str, map(float, g[0].flatten()))),
            ",".join(map(str, map(float, g[1]))),
@@ -407,12 +422,14 @@ N = {};
            float(g[3]),
            ",".join(map(str, map(float, g[4].flatten().tolist()[0]))),
            ",".join(map(str, map(float, g[5]))),
+           ",".join(map(str, map(float, np.array(g[6]).flatten()))),
+           ",".join(map(str, map(float, self.values["e"].getMatrix()))),
            *(map(str, v)))
     f.write(s)
     f.close()
   def onSim(self):
     self.a.cla()
-    A, b, c, *r = gains(*getValues(self.values)[:11])
+    A, b, c, *r = gains(*getValues(self.values)[:13])
     sim(self.values["Frame Length"].get(), self.values["End"].get(), A, b, c, self.a)
     self.canvas.show()
   def onControl3D(self):
