@@ -44,6 +44,7 @@ import scipy.linalg
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import tkinter
+from tkinter import ttk
 import tkinter.filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 from matplotlib.figure import Figure
@@ -348,6 +349,8 @@ class FLIPMApp(tkinter.Frame):
     self.menuBar.add_cascade(label = "File", menu = self.menuFile)
     self.menuBar.add_cascade(label = "Commands", menu = self.menuCommand)
   def createWidgets(self):
+    notebook = ttk.Notebook(self)
+    notebook.pack()
     self.values = {}
     self.controlframe = tkinter.Frame(self)
     self.controlframe.pack(side = "left", fill = "both")
@@ -377,10 +380,16 @@ class FLIPMApp(tkinter.Frame):
     b.pack(fill = "x")
     b = tkinter.Button(frame, text="Simulate", command=self.onController)
     b.pack(fill = "x")
+    frame = tkinter.Frame(self.controlframe)
+    frame.pack(fill = "x")
+    b = tkinter.Button(frame, text="Load Controller Default", command=self.onControllerDef)
+    b.pack(fill = "x")
+    b = tkinter.Button(frame, text="Simulate", command=self.onController)
+    b.pack(fill = "x")
     ###########
     # Buttons #
-    ###########    
-    f = Figure(figsize=(15,12), dpi=50, facecolor='white')
+    ###########       
+    f = Figure(figsize=(16,12), dpi=50, facecolor='white')
     self.a = f.add_subplot(111)
     self.canvas = FigureCanvasTkAgg(f, master=self)
     self.canvas.show()
@@ -388,6 +397,9 @@ class FLIPMApp(tkinter.Frame):
     toolbar = NavigationToolbar2TkAgg( self.canvas, self )
     toolbar.update()
     self.canvas._tkcanvas.pack(side=tkinter.TOP,  expand=1)
+    notebook.add(self.controlframe, text="Controller", state="normal")
+    notebook.add(self.observerframe, text="Observer", state="normal")
+    notebook.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=1)
   def onSave(self): # m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, R0, N
     f = tkinter.filedialog.asksaveasfile()
     v = getValues(self.values)
