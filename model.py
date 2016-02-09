@@ -49,6 +49,8 @@ import tkinter.filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 from matplotlib.figure import Figure
 import sys
+import paramiko
+import time
 
 __author__ = "Oliver Urbann"
 __copyright__ = "Copyright 2015, Oliver Urbann"
@@ -187,12 +189,45 @@ def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
   Cm[0,0] = 1
   Cm[1,2] = 1    
   Cm[2,3] = 1  
+  #Cm[3,5] = 1
   
-  
-  L,S,e = dlrq(A.transpose(),Cm.transpose(), Ql, RO)
-  L = L.transpose()
+  if isObservable(A, Cm) :
+      L,S,e = dlrq(A.transpose(),Cm.transpose(), Ql, RO)
+      L = L.transpose()
+  else:
+      raise ValueError('System is not Observable!')
   return A, b, c, Gi, Gx, Gd, L
 
+def popup(text):
+    toplevel = tkinter.Toplevel()
+    label1 = tkinter.Label(toplevel, text=text,fg="red")
+    label1.pack()
+
+def obsv(A, Cm):
+    # Convert input to numpy matrices
+    A = np.mat(A)
+    Cm = np.mat(Cm)    
+    
+    # Calculate N
+    N = np.shape(A)[0]
+
+    # Calculate observability matrix
+    obsv = Cm
+    for i in range(1, N):
+        obsv = np.vstack((obsv, Cm*A**i))
+    return obsv
+    
+def isObservable(A, Cm):
+    N = np.shape(A)[0]
+    Obsv = obsv(A, Cm)
+    
+    rankObsv = np.linalg.matrix_rank(Obsv)
+    if np.asscalar(rankObsv) == N : 
+        return True
+    else:
+        popup("System is not Observable! Rank is " + str(np.asscalar(rankObsv)) + " instead of " + str(N))
+        return False
+    
 def dlrq(A,B,Q,R) :                                         # http://de.mathworks.com/help/control/ref/dlqr.html
   S = np.matrix(sp.linalg.solve_discrete_are(A, B, Q, R))   # solve the discrete-time Riccati equation
   K = (B.transpose()*S*B + R) ** -1 * (B.transpose()*S*A)   # calculate gain matrix k
@@ -325,8 +360,8 @@ class FLIPMApp(tkinter.Frame):
     master.config(menu = self.menuBar)
     self.fillMenuBar()
     self.pack()
-  def addValue(self, text, min, max, inc):
-    frame = tkinter.Frame(self.controlframe)
+  def addValue(self, frame ,text, min, max, inc):
+    frame = tkinter.Frame(frame)
     frame.pack(fill = "x")
     txt = tkinter.Label(frame)
     txt["text"] = text
@@ -352,25 +387,28 @@ class FLIPMApp(tkinter.Frame):
     notebook = ttk.Notebook(self)
     notebook.pack()
     self.values = {}
+    self.naoIP = ""
     self.controlframe = tkinter.Frame(self)
     self.controlframe.pack(side = "left", fill = "both")
-    self.addValue("Small Mass", 0.000000001, 100, 0.1)
-    self.addValue("Large Mass", 0.00001, 1000000000, 0.1)
-    self.addValue("Gravity", 0.1, 100, 0.1)
-    self.addValue("Height", 0.01, 100, 0.1)
-    self.addValue("Frame Length", 0.00001, 1, 0.001)
-    self.addValue("Spring Constant", 0.001, 1000000, 0.1)
-    self.addValue("Damper Constant", 0.001, 1000000, 0.1)
-    self.addValue("Qx", 10**-10, 10**10, 1)
-    self.addValue("Qe", 10**-10, 10**10, 1)
-    self.addValue("R", 10**-10, 10**10, 1)
+    self.addValue(self.controlframe, "Small Mass", 0.000000001, 100, 0.1)
+    self.addValue(self.controlframe, "Large Mass", 0.00001, 1000000000, 0.1)
+    self.addValue(self.controlframe, "Gravity", 0.1, 100, 0.1)
+    self.addValue(self.controlframe, "Height", 0.01, 100, 0.1)
+    self.addValue(self.controlframe, "Frame Length", 0.00001, 1, 0.001)
+    self.addValue(self.controlframe, "Spring Constant", 0.001, 1000000, 0.1)
+    self.addValue(self.controlframe, "Damper Constant", 0.001, 1000000, 0.1)
+    self.addValue(self.controlframe, "Qx", 10**-10, 10**10, 1)
+    self.addValue(self.controlframe, "Qe", 10**-10, 10**10, 1)
+    self.addValue(self.controlframe, "R", 10**-10, 10**10, 1)
+    self.addValue(self.controlframe, "N", 1, 1000, 1)
+    self.addValue(self.controlframe, "End", 0, 100, 0.5)
+    
     self.observerframe = tkinter.Frame(self)
     self.observerframe.pack(side = "left", fill = "both")
     self.values["Ql"] = MatrixInput(self.observerframe,"Ql", 6, 6, 10**10, 10**10, 100)
     self.values["RO"] = MatrixInput(self.observerframe,"RO", 3, 3, 10**-10, 10**20, 100)
-    self.addValue("N", 1, 1000, 1)
-    self.addValue("End", 0, 100, 0.5)
     self.values["e"] = MatrixInput(self.observerframe,"Error", 3, 1, -10**3, 10**3, 0.001)
+    
     ###########
     # Buttons #
     ###########
@@ -380,15 +418,39 @@ class FLIPMApp(tkinter.Frame):
     b.pack(fill = "x")
     b = tkinter.Button(frame, text="Simulate", command=self.onController)
     b.pack(fill = "x")
+    
     frame = tkinter.Frame(self.controlframe)
     frame.pack(fill = "x")
     b = tkinter.Button(frame, text="Load Controller Default", command=self.onControllerDef)
     b.pack(fill = "x")
     b = tkinter.Button(frame, text="Simulate", command=self.onController)
+    b.pack(fill = "x")    
+    
+    ############
+    # NaoFrame #
+    ############    
+    self.naoframe = tkinter.Frame(self)
+    self.naoframe.pack(side = "left", fill = "both")
+    frame = tkinter.Frame(self.naoframe)
+    frame.pack(fill = "x")
+    txt = tkinter.Label(frame)
+    txt["text"] = "NaoIP"
+    txt.pack(side = "left", fill = "x")
+    v = tkinter.StringVar(value='192.168.101.102')
+    s = tkinter.Entry(frame, textvariable = v)
+    s.pack(side = "right", fill = "x")   
+    self.naoIP = v
+    
+    buttonframe = tkinter.Frame(self.naoframe)
+    buttonframe.pack(fill = "x")
+    b = tkinter.Button(buttonframe, text="Send Gains to Nao", command=self.connectSSH)
     b.pack(fill = "x")
-    ###########
-    # Buttons #
-    ###########       
+    
+    self.textbox = tkinter.Text(self.naoframe)
+    self.textbox.pack(fill = "x")
+    ########
+    # Plot #
+    ########       
     f = Figure(figsize=(16,12), dpi=50, facecolor='white')
     self.a = f.add_subplot(111)
     self.canvas = FigureCanvasTkAgg(f, master=self)
@@ -399,6 +461,7 @@ class FLIPMApp(tkinter.Frame):
     self.canvas._tkcanvas.pack(side=tkinter.TOP,  expand=1)
     notebook.add(self.controlframe, text="Controller", state="normal")
     notebook.add(self.observerframe, text="Observer", state="normal")
+    notebook.add(self.naoframe, text="Nao", state="normal")
     notebook.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=1)
   def onSave(self): # m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, R0, N
     f = tkinter.filedialog.asksaveasfile()
@@ -428,14 +491,14 @@ R = {};
 Ql = {{ content = [{}]; }};
 RO = {{ content = [{}]; }};
 N = {};
-""".format(",".join(map(str, map(float, g[0].flatten()))),
-           ",".join(map(str, map(float, g[1]))),
-           ",".join(map(str, map(float, g[2].tolist()[0]))),
-           float(g[3]),
-           ",".join(map(str, map(float, g[4].flatten().tolist()[0]))),
-           ",".join(map(str, map(float, g[5]))),
-           ",".join(map(str, map(float, np.array(g[6]).flatten()))),
-           ",".join(map(str, map(float, self.values["e"].getMatrix()))),
+""".format(",".join(map(str, map(float, g[0].flatten()))),              # A
+           ",".join(map(str, map(float, g[1]))),                        # b             
+           ",".join(map(str, map(float, g[2].tolist()[0]))),            # c
+           float(g[3]),                                                 # Gi
+           ",".join(map(str, map(float, g[4].flatten().tolist()[0]))),  # Gx
+           ",".join(map(str, map(float, g[5]))),                        # Gd
+           ",".join(map(str, map(float, np.array(g[6]).flatten()))),    # L
+           ",".join(map(str, map(float, self.values["e"].getMatrix()))),# error
            *(map(str, v)))
     f.write(s)
     f.close()
@@ -449,8 +512,11 @@ N = {};
     
   def onController(self, export = False):
     self.a.cla();
-    control(self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.values["e"].getMatrix(), self.a, *gains(*getValues(self.values)[:13]))
-    self.canvas.show()
+    try:
+        control(self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.values["e"].getMatrix(), self.a, *gains(*getValues(self.values)[:13]))
+        self.canvas.show()
+    except ValueError as err:
+        print(err)
   def onControllerDef(self):
     self.setValues(*controllerDefault)
   def onSimDef(self):
@@ -470,5 +536,74 @@ N = {};
     self.values["RO"].setMatrix(RO)
     self.values["N"].set(N)
     self.values["End"].set(end)
+
+  def connectSSH(self):
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    host = self.naoIP.get()
+    self.printTextbox("Connect to " + host)
+    port = 22
+    try:
+        ssh.connect(host, port=port,  username='root', allow_agent=True, timeout=5)
+        self.printTextbox("SSH-Verbindung erfolgreich!")
+
+        ftp = ssh.open_sftp()
+        self.printTextbox("FTP-Verbindung erfolgreich!")
+        file=ftp.file('/var/persistent/home/nao/Config.Arne_FLIPM/Robots/Default/FLIPM.cfg', "w", -1)
+        v = getValues(self.values)
+        g = gains(*v[:13]) # A, b, c, Gi, Gx, Gd, L
+        s = \
+"""
+A = {{ content = [{}]; }};
+b = {{ content = [{}]; }};
+c = {{ content = [{}]; }};
+Gi = {};
+Gx = {{ content = [{}]; }};
+Gd = {{ content = [{}]; }};
+L = {{ content = [{}]; }};
+m = {};
+M = {};
+g = {};
+z_h = {};
+dt = {};
+D = {};
+E = {};
+Qe = {};
+Qx = {};
+R = {};
+N = {};
+""".format(",".join(map(str, map(float, g[0].flatten()))),              # A
+           ",".join(map(str, map(float, g[1]))),                        # b             
+           ",".join(map(str, map(float, g[2].tolist()[0]))),            # c
+           float(g[3]),                                                 # Gi
+           ",".join(map(str, map(float, g[4].flatten().tolist()[0]))),  # Gx
+           ",".join(map(str, map(float, g[5]))),                        # Gd
+           ",".join(map(str, map(float, np.array(g[6]).flatten()))),    # L
+           float(v[0]), # m
+           float(v[1]), # M
+           float(v[2]), # g
+           float(v[3]), # z_h
+           float(v[4]), # dt
+           float(v[5]), # D
+           float(v[6]), # E
+           float(v[7]), # Qe
+           float(v[8]), # Qx
+           float(v[9]), # R
+           float(v[12]),) # N
+        
+        file.write(s)
+        self.printTextbox("Gains erfolgreich übertragen!")  
+        file.flush()
+        ftp.close()
+        self.printTextbox("FTP-Verbindung beendet!")   
+        ssh.close()
+        self.printTextbox("SSH-Verbindung beendet!")        
+        
+    except IOError:
+        self.printTextbox("Connection Failed!")
+        print(error)
+        
+  def printTextbox(self, text):
+    self.textbox.insert(tkinter.END, time.strftime('%X') + " - " + text + "\n")
     
 main()
