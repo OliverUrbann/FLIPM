@@ -193,32 +193,17 @@ def control(pref, dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with cont
     u = -Gi * v - Gx * x - s
     x = A * x + b * u
     v = v + c * x - pref(t)
-    zspout.append(zsp(Gx, Gd, x, N))
     x1out.append(x[0].item())
     x2out.append(x[3].item())
     zmpout.append((c * x).item())
     prefout.append(pref(t))
-  # y = c * x
-  X2 = np.linspace(end, end + 3 - dt, 3*(1/dt))
-  x[2] = zsp(Gx, Gd, x, N)
-  for t in X2:
-    z = zsp(Gx, Gd, x, N)
-    x = A * x
-    zspout.append(z)
-    x1out.append(x[0].item())
-    x2out.append(x[3].item())
-    zmpout.append((c * x).item())
-    prefout.append(pref(t))
-  Xg = np.append(X, X2)
-  plotarea.plot(Xg, zspout, label="$z$")
-  plotarea.plot(Xg, x1out, label="$c_{1,y}$", linestyle="dashed")
-  plotarea.plot(Xg, x2out, label="$c_{2,y}$")
-  plotarea.plot(Xg, zmpout, linewidth=2, label="$p_y$")
-  plotarea.plot(Xg, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
+  plotarea.plot(X, x1out, label="$c_{1,y}$", linestyle="dashed")
+  plotarea.plot(X, x2out, label="$c_{2,y}$")
+  plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
+  plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
   plotarea.legend(prop={'size':11}, borderpad=0.1)
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
-  
 def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   x = np.matrix(np.zeros((6,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
@@ -371,7 +356,7 @@ N = {};
     
   def onController(self, export = False):
     self.a.cla();
-    control(pref_x, self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.a, *flipm_gains(*getValues(self.values)[:11]))
+    control(pref_y, self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.a, *flipm_gains(*getValues(self.values)[:11]))
     self.canvas.show()
   def onControllerDef(self):
     self.setValues(*controllerDefault)
