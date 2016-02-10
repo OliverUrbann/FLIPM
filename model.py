@@ -90,13 +90,13 @@ def main():
     if arg == '-c': # Plot figure as shown in [1]
       fig1 = plt.figure(figsize=(6, 2), dpi=150)
       ax1 = fig1.add_subplot(111)
-      control(controllerDefault[4], int(sp.floor(controllerDefault[10])), controllerDefault[11], ax1, *gains(*controllerDefault[:11]))
+      control(controllerDefault[4], int(sp.floor(controllerDefault[10])), controllerDefault[11], ax1, *flipm_gains(*controllerDefault[:11]))
       plt.savefig("paper/build/FLIPMex" + ".pdf", format='pdf', bbox_inches='tight')
       noGui = True
     if arg == '-r': # Plot another figure shown in [1]
       fig1 = plt.figure(figsize=(6, 2), dpi=150)
       ax1 = fig1.add_subplot(111)
-      g = gains(*simDefault[:11])
+      g = flipm_gains(*simDefault[:11])
       sim(simDefault[4],simDefault[11], g[0], g[1], g[2], ax1)
       plt.savefig("paper/build/FLIPMmodel" + ".pdf", format='pdf', bbox_inches='tight')
       noGui = True
@@ -122,8 +122,18 @@ def getValues(d):
           d["R"].get(),
           int(sp.floor(d["N"].get())),
           d["End"].get())
-def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
-  # Calculation of controller gains as explained in [2].
+          
+def lipm_gains(m, g, z_h, dt, Qe, Qx, R, N):
+  A = np.array(
+      [[      1,     dt,       0],
+       [  g/z_h,      1,  -g/z_h],
+       [      0,      0,       1]])
+  b = np.matrix(np.array([0, 0, dt])).transpose()
+  c = np.matrix(np.array([0, 0, 1]))
+  return A, b, c, gains(A, b, c, Qe, Qx, R, N)
+  
+def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
+  # Calculation of controller flipm_gains as explained in [2].
   A = np.array(
       [[      1,     dt, dt**2/2,       0,        0,       0 ],
        [      0,      1,      dt,       0,        0,       0 ],
@@ -133,6 +143,9 @@ def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
        [      0,      0,       0,       0,        0,       1 ]])
   b = np.matrix(np.array([0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
   c = np.matrix(np.array([1, 0, -z_h/g, 0, 0, 0]))
+  return A, b, c, (*gains(A, b, c, Qe, Qx, R, N))
+  
+def gains(A, b, c, Qe, Qx, R, N):
   Bt = np.matrix(np.zeros((7, 1)))
   Bt[0, 0] = np.dot(c, b)
   Bt[1:7, 0] = b
@@ -155,13 +168,21 @@ def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   for i in range(1, N):
     Gd.append((R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * M)
     M = Ac.transpose() * M
-  return A, b, c, Gi, Gx, Gd
+  return Gi, Gx, Gd
+  
+def zsp(Gx, Gd, x, N):
+# 0 = -Gx * x - sum(Gd * z)
+# -Gx * x = z * sum(Gd)
+  z = -Gx * x / sum(Gd)
+  z = -Gx * x / sum(Gd)
+  return z[0,0]
 
-def control(dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with controller
+def control(pref, dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with controller
   x1out = list()
   x2out = list()
   zmpout = list()
   prefout = list()
+  zspout = list()
   x = np.matrix(np.zeros((6,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
   v = 0
@@ -172,17 +193,32 @@ def control(dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with controller
     u = -Gi * v - Gx * x - s
     x = A * x + b * u
     v = v + c * x - pref(t)
+    zspout.append(zsp(Gx, Gd, x, N))
     x1out.append(x[0].item())
     x2out.append(x[3].item())
     zmpout.append((c * x).item())
     prefout.append(pref(t))
-  plotarea.plot(X, x1out, label="$c_{1,y}$", linestyle="dashed")
-  plotarea.plot(X, x2out, label="$c_{2,y}$")
-  plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
-  plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
+  # y = c * x
+  X2 = np.linspace(end, end + 3 - dt, 3*(1/dt))
+  x[2] = zsp(Gx, Gd, x, N)
+  for t in X2:
+    z = zsp(Gx, Gd, x, N)
+    x = A * x
+    zspout.append(z)
+    x1out.append(x[0].item())
+    x2out.append(x[3].item())
+    zmpout.append((c * x).item())
+    prefout.append(pref(t))
+  Xg = np.append(X, X2)
+  plotarea.plot(Xg, zspout, label="$z$")
+  plotarea.plot(Xg, x1out, label="$c_{1,y}$", linestyle="dashed")
+  plotarea.plot(Xg, x2out, label="$c_{2,y}$")
+  plotarea.plot(Xg, zmpout, linewidth=2, label="$p_y$")
+  plotarea.plot(Xg, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
   plotarea.legend(prop={'size':11}, borderpad=0.1)
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
+  
 def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   x = np.matrix(np.zeros((6,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
@@ -202,13 +238,24 @@ def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   plotarea.legend(prop={'size':11}, borderpad=0.1, loc="lower right")
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
-def pref(t):
+  
+
+
+def pref_y(t):
   if t < 1:
     return 0
   if t - sp.floor(t) < 0.5:
     return -0.05
   else:
     return 0.05
+
+def pref_x(t):
+  if t < 1:
+    return 0
+ # if t > 3:
+ #   return 3 // 0.5 / 10
+  return (t // 0.5) / 10
+
     
 class StepControl:
   def __init__(self, N, A, b, c, Gi, Gx, Gd):
@@ -285,7 +332,7 @@ class FLIPMApp(tkinter.Frame):
   def onSave(self): # m, M, g, z_h, dt, D, E, Qe, Qx, R, N
     f = tkinter.filedialog.asksaveasfile()
     v = getValues(self.values)
-    g = gains(*v[:11]) # A, b, c, Gi, Gx, Gd
+    g = flipm_gains(*v[:11]) # A, b, c, Gi, Gx, Gd
     s = \
 """
 A = {{ content = [{}]; }};
@@ -316,7 +363,7 @@ N = {};
     f.close()
   def onSim(self):
     self.a.cla()
-    A, b, c, *r = gains(*getValues(self.values)[:11])
+    A, b, c, *r = flipm_gains(*getValues(self.values)[:11])
     sim(self.values["Frame Length"].get(), self.values["End"].get(), A, b, c, self.a)
     self.canvas.show()
   def onControl3D(self):
@@ -324,7 +371,7 @@ N = {};
     
   def onController(self, export = False):
     self.a.cla();
-    control(self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.a, *gains(*getValues(self.values)[:11]))
+    control(pref_x, self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.a, *flipm_gains(*getValues(self.values)[:11]))
     self.canvas.show()
   def onControllerDef(self):
     self.setValues(*controllerDefault)
