@@ -145,6 +145,10 @@ def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   c = np.matrix(np.array([1, 0, -z_h/g, 0, 0, 0]))
   return A, b, c, (*gains(A, b, c, Qe, Qx, R, N))
   
+def FLIPM_CP(x, g, z_h, t):
+  om = math.sqrt(g/z_h)
+  return math.exp(om * t) * (x[0] + 1/om * x[1])
+  
 def gains(A, b, c, Qe, Qx, R, N):
   Bt = np.matrix(np.zeros((7, 1)))
   Bt[0, 0] = np.dot(c, b)
@@ -237,8 +241,6 @@ def pref_y(t):
 def pref_x(t):
   if t < 1:
     return 0
- # if t > 3:
- #   return 3 // 0.5 / 10
   return (t // 0.5) / 10
 
     
