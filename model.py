@@ -82,7 +82,7 @@ mpl.rcParams['ps.fonttype'] = 42
 # Damping has the same derivation
 
 simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
-controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100, 5)
+controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 200, 20, 100, 100, 10**-10, 100, 5)
 
 def main():
   noGui = False
@@ -134,20 +134,31 @@ def lipm_gains(m, g, z_h, dt, Qe, Qx, R, N):
   
 def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   # Calculation of controller flipm_gains as explained in [2].
+  
+  DM = D/M
+  EM = E/M
+  Dm = D/m
+  Em = E/m
+  dt2 = dt**2/2
+  
   A = np.array(
-      [[      1,     dt, dt**2/2,       0,        0,       0 ],
-       [      0,      1,      dt,       0,        0,       0 ],
-       [   -D/M,   -E/M,       0,     D/M,      E/M,       0 ],
-       [      0,      0,       0,       1,       dt, dt**2/2 ],
-       [ D/m*dt, E/m*dt,       0, -D/m*dt, 1-E/m*dt,      dt ],
-       [      0,      0,       0,       0,        0,       1 ]])
+# From vector element      ------------->       to vector element
+#                                                              || 
+#       x1       dx1     ddx1       x2       dx2     ddx2      \/
+[[1-DM*dt2,dt-EM*dt2,     dt2,  DM*dt2,   EM*dt2,       0 ], # x1
+ [  -DM*dt,  1-EM*dt,      dt,   DM*dt,    EM*dt,       0 ], # dx1
+ [     -DM,      -EM,       0,      DM,       EM,       0 ], # ddx1
+ [  Dm*dt2,   Em*dt2,       0,1-Dm*dt2,dt-Em*dt2,     dt2 ], # x2
+ [   Dm*dt,    Em*dt,       0,  -Dm*dt,  1-Em*dt,      dt ], # dx2
+ [      Dm,       Em,       0,     -Dm,      -Em,       1 ]])# ddx2
+ 
   b = np.matrix(np.array([0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
   c = np.matrix(np.array([1, 0, -z_h/g, 0, 0, 0]))
   return A, b, c, (*gains(A, b, c, Qe, Qx, R, N))
   
-def FLIPM_CP(x, g, z_h, t):
-  om = math.sqrt(g/z_h)
-  return math.exp(om * t) * (x[0] + 1/om * x[1])
+def FLIPM_CP(x, dx, g, z_h, t = 0):
+  om = np.sqrt(g/z_h)
+  return np.exp(om * t) * (x + 1/om * dx)
   
 def gains(A, b, c, Qe, Qx, R, N):
   Bt = np.matrix(np.zeros((7, 1)))
@@ -181,7 +192,7 @@ def zsp(Gx, Gd, x, N):
   z = -Gx * x / sum(Gd)
   return z[0,0]
 
-def control(pref, dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with controller
+def control(pref, g, z_h, dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with controller
   x1out = list()
   x2out = list()
   zmpout = list()
@@ -189,6 +200,7 @@ def control(pref, dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with cont
   zspout = list()
   x = np.matrix(np.zeros((6,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
+  Xg = X
   v = 0
   for t in X:
     s = 0
@@ -201,10 +213,38 @@ def control(pref, dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with cont
     x2out.append(x[3].item())
     zmpout.append((c * x).item())
     prefout.append(pref(t))
-  plotarea.plot(X, x1out, label="$c_{1,y}$", linestyle="dashed")
-  plotarea.plot(X, x2out, label="$c_{2,y}$")
-  plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
-  plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
+
+  if 0:
+    X2 = np.linspace(end, end + 5, 5*(1/dt))
+    Xg = np.linspace(0, end + 5, (end+5)*(1/dt))
+    
+    # Another loop for stopping with CP
+    v = 0
+    lp = prefout[-1]
+    init_x = x[0] - lp
+    print("Initial position:" + str(init_x) + ", speed:" + str(x[1]))
+    cp = FLIPM_CP(init_x, x[1], g, z_h) + lp
+    print("CP set to:" + str(cp - lp))
+    #x[3] = x[0]
+    #x[4] = x[1]
+    #x[5] = 0  
+    #x[2] = 0
+    for t in X2:
+      s = 0
+      for t2 in range(0, N):
+        s += Gd[t2] * cp
+        u = -Gi * v - Gx * x - s
+        x = A * x + b * u
+        v = v + c * x - cp
+        x1out.append(x[0].item())
+        x2out.append(x[3].item())
+        zmpout.append((c * x).item())
+        prefout.append(cp)    
+    
+  plotarea.plot(Xg, x1out, label="$c_{1,y}$", linestyle="dashed")
+  plotarea.plot(Xg, x2out, label="$c_{2,y}$")
+  plotarea.plot(Xg, zmpout, linewidth=2, label="$p_y$")
+  plotarea.plot(Xg, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
   plotarea.legend(prop={'size':11}, borderpad=0.1)
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
@@ -229,7 +269,6 @@ def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   plotarea.set_ylabel('Position (y) [m]')
   
 
-
 def pref_y(t):
   if t < 1:
     return 0
@@ -243,24 +282,6 @@ def pref_x(t):
     return 0
   return (t // 0.5) / 10
 
-    
-class StepControl:
-  def __init__(self, N, A, b, c, Gi, Gx, Gd):
-    self.N = N
-    self.A = A
-    self.b = b
-    self.c = c
-    self.Gi = Gi
-    self.Gx = Gx
-    self.Gd = Gd
-    x = np.matrix(np.zeros((6,1)))
-  def step(pref):
-    for i in range(0, N):
-      s += Gd[i] * pref[i]
-    u = -Gi * v - Gx * x - s
-    x = A * x + b * u
-    v = v + c * x - pref(0)
-        
 class FLIPMApp(tkinter.Frame):
   def __init__(self, master=None):
     tkinter.Frame.__init__(self, master)
@@ -269,6 +290,8 @@ class FLIPMApp(tkinter.Frame):
     master.config(menu = self.menuBar)
     self.fillMenuBar()
     self.pack()
+    self.onControllerDef()
+    self.onController()
   def addValue(self, text, min, max, inc):
     frame = tkinter.Frame(self.controlframe)
     frame.pack(fill = "x")
@@ -282,6 +305,7 @@ class FLIPMApp(tkinter.Frame):
     s["increment"] = inc
     s.pack(side = "right", fill = "x")
     self.values[text] = v
+
   def fillMenuBar(self):
     self.menuFile = tkinter.Menu(self.menuBar)
     self.menuFile.add_command(label = "Save Gains...", command = self.onSave)
@@ -358,7 +382,7 @@ N = {};
     
   def onController(self, export = False):
     self.a.cla();
-    control(pref_y, self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.a, *flipm_gains(*getValues(self.values)[:11]))
+    control(pref_y, self.values["Gravity"].get(), self.values["Height"].get(), self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.a, *flipm_gains(*getValues(self.values)[:11]))
     self.canvas.show()
   def onControllerDef(self):
     self.setValues(*controllerDefault)
