@@ -82,7 +82,7 @@ mpl.rcParams['ps.fonttype'] = 42
 # Damping has the same derivation
 
 simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
-controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 200, 20, 100, 100, 10**-10, 100, 5)
+controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 10, 7, 100, 100, 10**-10, 100, 5)
 
 def main():
   noGui = False
@@ -132,6 +132,32 @@ def lipm_gains(m, g, z_h, dt, Qe, Qx, R, N):
   c = np.matrix(np.array([0, 0, 1]))
   return A, b, c, gains(A, b, c, Qe, Qx, R, N)
   
+def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
+  
+    DM = D/M
+    EM = E/M
+    Dm = D/m
+    Em = E/m
+    dt2 = dt**2/2
+    gz = g/z_h
+    
+    A = np.array(
+  # From vector element        ------------->             to vector element
+  #                                                                     ||
+  #        x1       dx1        p       dp       x2       dx2   ddx2     \/
+  [[        1,       dt,       0,       0,       0,        0,     0 ], # x1
+   [       gz,        1,     -gz,       0,       0,        0,     0 ], # dx1
+   [        0,        0,1-DM*dt2, -EM*dt2,  DM*dt2,   EM*dt2,     0 ], # p
+   [        0,        0,  -DM*dt, 1-EM*dt,   DM*dt,    EM*dt,     0 ], # dp
+   [   Dm*dt2,   Em*dt2,       0,       0,1-Dm*dt2,dt-Em*dt2,   dt2 ], # x2
+   [    Dm*dt,    Em*dt,       0,       0,  -Dm*dt,  1-Em*dt,    dt ], # dx2
+   [       Dm,       Em,       0,       0,     -Dm,      -Em,     0 ]])# ddx2
+
+
+    b = np.matrix(np.array([0, 0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
+    c = np.matrix(np.array([0, 0, 1, 0, 0, 0, 0]))
+    return A, b, c, (*gains(A, b, c, Qe, Qx, R, N))
+  
 def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   # Calculation of controller flipm_gains as explained in [2].
   
@@ -140,18 +166,18 @@ def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   Dm = D/m
   Em = E/m
   dt2 = dt**2/2
-  
+
   A = np.array(
 # From vector element      ------------->       to vector element
-#                                                              || 
+#                                                              ||
 #       x1       dx1     ddx1       x2       dx2     ddx2      \/
 [[1-DM*dt2,dt-EM*dt2,     dt2,  DM*dt2,   EM*dt2,       0 ], # x1
  [  -DM*dt,  1-EM*dt,      dt,   DM*dt,    EM*dt,       0 ], # dx1
- [     -DM,      -EM,       0,      DM,       EM,       0 ], # ddx1
+ [     -DM,      -EM,       1,      DM,       EM,       0 ], # ddx1
  [  Dm*dt2,   Em*dt2,       0,1-Dm*dt2,dt-Em*dt2,     dt2 ], # x2
  [   Dm*dt,    Em*dt,       0,  -Dm*dt,  1-Em*dt,      dt ], # dx2
- [      Dm,       Em,       0,     -Dm,      -Em,       1 ]])# ddx2
- 
+ [      Dm,       Em,       0,     -Dm,      -Em,       0 ]])# ddx2
+
   b = np.matrix(np.array([0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
   c = np.matrix(np.array([1, 0, -z_h/g, 0, 0, 0]))
   return A, b, c, (*gains(A, b, c, Qe, Qx, R, N))
@@ -161,19 +187,22 @@ def FLIPM_CP(x, dx, g, z_h, t = 0):
   return np.exp(om * t) * (x + 1/om * dx)
   
 def gains(A, b, c, Qe, Qx, R, N):
-  Bt = np.matrix(np.zeros((7, 1)))
+  s = b.shape[0]
+  Bt = np.matrix(np.zeros((s+1, 1)))
   Bt[0, 0] = np.dot(c, b)
-  Bt[1:7, 0] = b
-  It = np.matrix(np.array([1, 0, 0, 0, 0, 0, 0])).transpose()
-  Ft = np.matrix(np.zeros((7, 6)))
-  Ft[0, 0:6] = c * A
-  Ft[1:7, 0:6] = A
-  Qt = np.matrix(np.zeros((7, 7)))
+  Bt[1:s+1, 0] = b
+  It = np.zeros((s+1,1))
+  It[0, 0] = 1
+  #It = np.matrix(np.array([1, 0, 0, 0, 0, 0, 0])).transpose()
+  Ft = np.matrix(np.zeros((s+1, s)))
+  Ft[0, 0:s] = c * A
+  Ft[1:s+1, 0:s] = A
+  Qt = np.matrix(np.zeros((s+1, s+1)))
   Qt[0, 0] = Qe
-  Qt[1:7, 1:7] = c.transpose() * Qx *c
-  At = np.matrix(np.zeros((7, 7)))
-  At[0:7, 0] = It
-  At[0:7, 1:7] = Ft
+  Qt[1:s+1, 1:s+1] = c.transpose() * Qx *c
+  At = np.matrix(np.zeros((s+1, s+1)))
+  At[0:s+1, 0] = It
+  At[0:s+1, 1:s+1] = Ft
   Pt = np.matrix(sp.linalg.solve_discrete_are(At, Bt, Qt, np.ones((1,1)) * R))
   Gx = (R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * Pt * Ft
   Gi = (R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * Pt * It
@@ -192,13 +221,16 @@ def zsp(Gx, Gd, x, N):
   z = -Gx * x / sum(Gd)
   return z[0,0]
 
-def control(pref, g, z_h, dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk with controller
+def control(cp_stop, pref, g, z_h, dt, N, end, 
+            plotarea, A, b, c, Gi, 
+            Gx, Gd): # a walk with controller
+  s = b.shape[0]          
   x1out = list()
   x2out = list()
   zmpout = list()
   prefout = list()
   zspout = list()
-  x = np.matrix(np.zeros((6,1)))
+  x = np.matrix(np.zeros((s,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
   Xg = X
   v = 0
@@ -214,32 +246,32 @@ def control(pref, g, z_h, dt, N, end, plotarea, A, b, c, Gi, Gx, Gd): # a walk w
     zmpout.append((c * x).item())
     prefout.append(pref(t))
 
-  if 0:
+  if cp_stop:
     X2 = np.linspace(end, end + 5, 5*(1/dt))
     Xg = np.linspace(0, end + 5, (end+5)*(1/dt))
     
     # Another loop for stopping with CP
     v = 0
     lp = prefout[-1]
-    init_x = x[0] - lp
+    init_x = x[0] #- lp
     print("Initial position:" + str(init_x) + ", speed:" + str(x[1]))
-    cp = FLIPM_CP(init_x, x[1], g, z_h) + lp
+    cp = FLIPM_CP(init_x, x[1], g, z_h, dt) #+ lp
     print("CP set to:" + str(cp - lp))
-    #x[3] = x[0]
-    #x[4] = x[1]
-    #x[5] = 0  
-    #x[2] = 0
+    x[3] = x[0]
+    x[4] = x[1]
+    x[5] = 0  
+    x[2] = 0
     for t in X2:
       s = 0
       for t2 in range(0, N):
         s += Gd[t2] * cp
-        u = -Gi * v - Gx * x - s
-        x = A * x + b * u
-        v = v + c * x - cp
-        x1out.append(x[0].item())
-        x2out.append(x[3].item())
-        zmpout.append((c * x).item())
-        prefout.append(cp)    
+      u = -Gi * v - Gx * x - s
+      x = A * x + b * u
+      v = v + c * x - cp
+      x1out.append(x[0].item())
+      x2out.append(x[3].item())
+      zmpout.append((c * x).item())
+      prefout.append(cp)    
     
   plotarea.plot(Xg, x1out, label="$c_{1,y}$", linestyle="dashed")
   plotarea.plot(Xg, x2out, label="$c_{2,y}$")
@@ -261,7 +293,7 @@ def sim(dt, end, A, b, c, plotarea): # Just a simple demo
     x = A * x + b * u[t*(1/dt)]
     x1.append(x[0].item())
     x2.append(x[3].item())
-    
+
   plotarea.plot(X, x1, linewidth=2, label="$c_{1}$")
   plotarea.plot(X, x2, linewidth=2, label="$c_{2}$")
   plotarea.legend(prop={'size':11}, borderpad=0.1, loc="lower right")
@@ -382,7 +414,12 @@ N = {};
     
   def onController(self, export = False):
     self.a.cla();
-    control(pref_y, self.values["Gravity"].get(), self.values["Height"].get(), self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.a, *flipm_gains(*getValues(self.values)[:11]))
+    control(0, pref_y, self.values["Gravity"].get(),
+            self.values["Height"].get(), 
+            self.values["Frame Length"].get(),
+            int(sp.floor(self.values["N"].get())),
+            self.values["End"].get(), self.a,
+            *flipm_gains(*getValues(self.values)[:11]))
     self.canvas.show()
   def onControllerDef(self):
     self.setValues(*controllerDefault)
