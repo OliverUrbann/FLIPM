@@ -51,6 +51,7 @@ from matplotlib.figure import Figure
 import sys
 import paramiko
 import time
+import random
 
 __author__ = "Oliver Urbann"
 __copyright__ = "Copyright 2015, Oliver Urbann"
@@ -106,6 +107,19 @@ controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10,
                                          [0,  10**4, 0],
                                          [0,  0, 10**4]])),
                      100, 5)
+                     
+flipmDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10,
+                     np.matrix(np.array([[10**-0, 0, 0, 0 ,0 ,0 ],
+                                         [0, 1, 0, 0, 0, 0],
+                                         [0, 0, 10**2, 0, 0, 0],
+                                         [0, 0, 0, 10**2, 0, 0],
+                                         [0, 0, 0, 0, 1, 0],
+                                         [0, 0, 0, 0 ,0 ,1]])),
+                     np.matrix(np.array([[10**17,  0, 0],
+                                         [0,  10**4, 0],
+                                         [0,  0, 10**4]])),
+                     100, 5)
+
 error = np.matrix([0.0, 0.0, 0.0]).transpose()
 
 def main():
@@ -238,6 +252,7 @@ def control(dt, N, end, error, plotarea, A, b, c, Gi, Gx, Gd, L): # a walk with 
   x1out = list()
   x2out = list()
   zmpout = list()
+  acc1out = list()
   prefout = list()
   x = np.matrix(np.zeros((6,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
@@ -247,19 +262,23 @@ def control(dt, N, end, error, plotarea, A, b, c, Gi, Gx, Gd, L): # a walk with 
     for t2 in range(0, N):
       s += Gd[t2] * pref(t+t2*dt)
     u = -Gi * v - Gx * x - s
-    x = A * x + b * u + L*e(error,t)
+    x = A * x + b * u + L * e(error,t)
     v = v + c * x - pref(t)
     x1out.append(x[0].item())
     x2out.append(x[3].item())
     zmpout.append((c * x).item())
+    acc1out.append((x[2]).item())
     prefout.append(pref(t))
-  plotarea.plot(X, x1out, label="$c_{1,y}$", linestyle="dashed")
-  plotarea.plot(X, x2out, label="$c_{2,y}$")
+  plotarea.plot(X, x1out, label="$c_{1,y}$", linewidth=2)
+  plotarea.plot(X, x2out, label="$c_{2,y}$", linewidth=2)
   plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
+  #plotarea.plot(X, acc1out, linewidth=2, label="$\ddot{c_{1,y}}$")
   plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
-  plotarea.legend(prop={'size':11}, borderpad=0.1)
+  plotarea.legend(prop={'size':26}, borderpad=0.1, loc="upper left")
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
+  plotarea.set_ylim([-0.15, 0.15])  
+  
 def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   x = np.matrix(np.zeros((6,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
@@ -283,6 +302,11 @@ def sim(dt, end, A, b, c, plotarea): # Just a simple demo
 def e(error, t): #Error
   if t >=2 and t<2.1:
     return error
+  #if t>=2:
+#    randomError = np.matrix(np.zeros((3, 1)))
+#    for i in range(len(error)):
+#        randomError[i] = error[i]* random.uniform(0, 1)
+ #   return randomError
   else:
     return np.matrix([0.0, 0.0, 0.0]).transpose()
 
@@ -414,17 +438,25 @@ class FLIPMApp(tkinter.Frame):
     ###########
     frame = tkinter.Frame(self.observerframe)
     frame.pack(fill = "x")
-    b = tkinter.Button(frame, text="Load Controller Default", command=self.onControllerDef)
-    b.pack(fill = "x")
+    #b = tkinter.Button(frame, text="Load Controller Default", command=self.onControllerDef)
+    #b.pack(fill = "x")
     b = tkinter.Button(frame, text="Simulate", command=self.onController)
+    b.pack(fill = "x")
+    b = tkinter.Button(frame, text="Save Gains", command=self.saveFLIPM)
+    b.pack(fill = "x")
+    b = tkinter.Button(frame, text="Load Gains", command=self.loadFLIPM)
     b.pack(fill = "x")
     
     frame = tkinter.Frame(self.controlframe)
     frame.pack(fill = "x")
-    b = tkinter.Button(frame, text="Load Controller Default", command=self.onControllerDef)
-    b.pack(fill = "x")
+    #b = tkinter.Button(frame, text="Load Controller Default", command=self.onControllerDef)
+    #b.pack(fill = "x")
     b = tkinter.Button(frame, text="Simulate", command=self.onController)
-    b.pack(fill = "x")    
+    b.pack(fill = "x")  
+    b = tkinter.Button(frame, text="Save Gains", command=self.saveFLIPM)
+    b.pack(fill = "x")
+    b = tkinter.Button(frame, text="Load Gains", command=self.loadFLIPM)
+    b.pack(fill = "x")
     
     ############
     # NaoFrame #
@@ -436,7 +468,7 @@ class FLIPMApp(tkinter.Frame):
     txt = tkinter.Label(frame)
     txt["text"] = "NaoIP"
     txt.pack(side = "left", fill = "x")
-    v = tkinter.StringVar(value='192.168.101.102')
+    v = tkinter.StringVar(value='192.168.101.109')
     s = tkinter.Entry(frame, textvariable = v)
     s.pack(side = "right", fill = "x")   
     self.naoIP = v
@@ -459,10 +491,38 @@ class FLIPMApp(tkinter.Frame):
     toolbar = NavigationToolbar2TkAgg( self.canvas, self )
     toolbar.update()
     self.canvas._tkcanvas.pack(side=tkinter.TOP,  expand=1)
+    
+    ########
+    # Tabs #
+    ########
     notebook.add(self.controlframe, text="Controller", state="normal")
     notebook.add(self.observerframe, text="Observer", state="normal")
     notebook.add(self.naoframe, text="Nao", state="normal")
     notebook.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=1)
+
+  def loadFLIPM(self):
+    with open('flipmValues.txt') as f:
+        load = f.read().splitlines()   
+    Ql = np.loadtxt('flipmOberverQl.txt')
+    RO = np.loadtxt('flipmOberverRO.txt')
+ 
+    load.insert(10,Ql)
+    load.insert(11,RO)
+    #print(load)
+    
+    self.setValues(*load[:14])
+    
+  def saveFLIPM(self):
+    f = open('flipmValues.txt','w')
+    save = getValues(self.values)
+    for i in range(0,len(save)):
+        if i != 10 and i != 11:        
+            f.write("%s\n" % save[i])
+    f.close()
+    np.savetxt("flipmOberverQl.txt", save[10])
+    np.savetxt("flipmOberverRO.txt", save[11])
+    
+
   def onSave(self): # m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, R0, N
     f = tkinter.filedialog.asksaveasfile()
     v = getValues(self.values)
