@@ -96,7 +96,7 @@ simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10,
                                   [0,  1, 0],
                                   [0,  0, 1]])),              
               100, 5)
-controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10,
+controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 10, 7, 100, 100, 10**-10,
                      np.matrix(np.array([[10**-0, 0, 0, 0 ,0 ,0 ],
                                          [0, 1, 0, 0, 0, 0],
                                          [0, 0, 10**2, 0, 0, 0],
@@ -128,13 +128,13 @@ def main():
     if arg == '-c': # Plot figure as shown in [1]
       fig1 = plt.figure(figsize=(6, 2), dpi=150)
       ax1 = fig1.add_subplot(111)
-      control(controllerDefault[4], int(sp.floor(controllerDefault[10])), controllerDefault[11], ax1, *gains(*controllerDefault[:11]))
+      control(controllerDefault[4], int(sp.floor(controllerDefault[10])), controllerDefault[11], ax1, *flipm_gains(*controllerDefault[:11]))
       plt.savefig("paper/build/FLIPMex" + ".pdf", format='pdf', bbox_inches='tight')
       noGui = True
     if arg == '-r': # Plot another figure shown in [1]
       fig1 = plt.figure(figsize=(6, 2), dpi=150)
       ax1 = fig1.add_subplot(111)
-      g = gains(*simDefault[:11])
+      g = flipm_gains(*simDefault[:11])
       sim(simDefault[4],simDefault[11], g[0], g[1], g[2], ax1)
       plt.savefig("paper/build/FLIPMmodel" + ".pdf", format='pdf', bbox_inches='tight')
       noGui = True
@@ -162,30 +162,87 @@ def getValues(d):
           d["RO"].getMatrix(),
           int(sp.floor(d["N"].get())),
           d["End"].get())
-def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
-  # Calculation of controller gains as explained in [2].
+          
+def lipm_gains(m, g, z_h, dt, Qe, Qx, R, Ql, RO, N):
   A = np.array(
-      [[      1,     dt, dt**2/2,       0,        0,       0 ],
-       [      0,      1,      dt,       0,        0,       0 ],
-       [   -D/M,   -E/M,       0,     D/M,      E/M,       0 ],
-       [      0,      0,       0,       1,       dt, dt**2/2 ],
-       [ D/m*dt, E/m*dt,       0, -D/m*dt, 1-E/m*dt,      dt ],
-       [      0,      0,       0,       0,        0,       1 ]])
-  b = np.matrix(np.array([0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
+      [[      1,     dt,       0],
+       [  g/z_h,      1,  -g/z_h],
+       [      0,      0,       1]])
+  b = np.matrix(np.array([0, 0, dt])).transpose()
+  c = np.matrix(np.array([0, 0, 1]))
+  return A, b, c, gains(A, b, c, Qe, Qx, R, Ql, RO, N)
+  
+def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
+  
+    DM = D/M
+    EM = E/M
+    Dm = D/m
+    Em = E/m
+    dt2 = dt**2/2
+    gz = g/z_h
+    
+    A = np.array(
+  # From vector element        ------------->             to vector element
+  #                                                                     ||
+  #        x1       dx1        p       dp       x2       dx2   ddx2     \/
+  [[        1,       dt,       0,       0,       0,        0,     0 ], # x1
+   [       gz,        1,     -gz,       0,       0,        0,     0 ], # dx1
+   [        0,        0,1-DM*dt2, -EM*dt2,  DM*dt2,   EM*dt2,     0 ], # p
+   [        0,        0,  -DM*dt, 1-EM*dt,   DM*dt,    EM*dt,     0 ], # dp
+   [   Dm*dt2,   Em*dt2,       0,       0,1-Dm*dt2,dt-Em*dt2,   dt2 ], # x2
+   [    Dm*dt,    Em*dt,       0,       0,  -Dm*dt,  1-Em*dt,    dt ], # dx2
+   [       Dm,       Em,       0,       0,     -Dm,      -Em,     0 ]])# ddx2
+
+
+    b = np.matrix(np.array([0, 0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
+    c = np.matrix(np.array([0, 0, 1, 0, 0, 0, 0]))
+    return A, b, c, gains(A, b, c, Qe, Qx, R, Ql, RO, N)
+  
+def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
+  # Calculation of controller flipm_gains as explained in [2].
+  
+  DM = D/M
+  EM = E/M
+  Dm = D/m
+  Em = E/m
+  dt2 = dt**2/2
+
+  A = np.array(
+# From vector element      ------------->       to vector element
+#                                                              ||
+#       x1       dx1     ddx1       x2       dx2     ddx2      \/
+[[1-DM*dt2,dt-EM*dt2,     dt2,  DM*dt2,   EM*dt2,       0 ], # x1
+ [  -DM*dt,  1-EM*dt,      dt,   DM*dt,    EM*dt,       0 ], # dx1
+ [     -DM,      -EM,       1,      DM,       EM,       0 ], # ddx1
+ [  Dm*dt2,   Em*dt2,       0,1-Dm*dt2,dt-Em*dt2,     dt2 ], # x2
+ [   Dm*dt,    Em*dt,       0,  -Dm*dt,  1-Em*dt,      dt ], # dx2
+ [      Dm,       Em,       0,     -Dm,      -Em,       0 ]])# ddx2
+
+  b = np.matrix(np.array([0, 0, 0, dt**3 / 6, dt2, dt])).transpose()
   c = np.matrix(np.array([1, 0, -z_h/g, 0, 0, 0]))
-  Bt = np.matrix(np.zeros((7, 1)))
+  return gains(A, b, c, Qe, Qx, R, Ql, RO, N)
+  
+def FLIPM_CP(x, dx, g, z_h, t = 0):
+  om = np.sqrt(g/z_h)
+  return np.exp(om * t) * (x + 1/om * dx)
+  
+def gains(A, b, c, Qe, Qx, R, Ql, RO, N):
+  s = b.shape[0]
+  Bt = np.matrix(np.zeros((s+1, 1)))
   Bt[0, 0] = np.dot(c, b)
-  Bt[1:7, 0] = b
-  It = np.matrix(np.array([1, 0, 0, 0, 0, 0, 0])).transpose()
-  Ft = np.matrix(np.zeros((7, 6)))
-  Ft[0, 0:6] = c * A
-  Ft[1:7, 0:6] = A
-  Qt = np.matrix(np.zeros((7, 7)))
+  Bt[1:s+1, 0] = b
+  It = np.zeros((s+1,1))
+  It[0, 0] = 1
+  #It = np.matrix(np.array([1, 0, 0, 0, 0, 0, 0])).transpose()
+  Ft = np.matrix(np.zeros((s+1, s)))
+  Ft[0, 0:s] = c * A
+  Ft[1:s+1, 0:s] = A
+  Qt = np.matrix(np.zeros((s+1, s+1)))
   Qt[0, 0] = Qe
-  Qt[1:7, 1:7] = c.transpose() * Qx *c
-  At = np.matrix(np.zeros((7, 7)))
-  At[0:7, 0] = It
-  At[0:7, 1:7] = Ft
+  Qt[1:s+1, 1:s+1] = c.transpose() * Qx *c
+  At = np.matrix(np.zeros((s+1, s+1)))
+  At[0:s+1, 0] = It
+  At[0:s+1, 1:s+1] = Ft
   Pt = np.matrix(sp.linalg.solve_discrete_are(At, Bt, Qt, np.ones((1,1)) * R))
   Gx = (R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * Pt * Ft
   Gi = (R + Bt.transpose() * Pt * Bt) ** -1 * Bt.transpose() * Pt * It
@@ -211,6 +268,13 @@ def gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
   else:
       raise ValueError('System is not Observable!')
   return A, b, c, Gi, Gx, Gd, L
+
+def zsp(Gx, Gd, x, N):
+# 0 = -Gx * x - sum(Gd * z)
+# -Gx * x = z * sum(Gd)
+  z = -Gx * x / sum(Gd)
+  z = -Gx * x / sum(Gd)
+  return z[0,0]
 
 def popup(text):
     toplevel = tkinter.Toplevel()
@@ -247,15 +311,18 @@ def dlrq(A,B,Q,R) :                                         # http://de.mathwork
   K = (B.transpose()*S*B + R) ** -1 * (B.transpose()*S*A)   # calculate gain matrix k
   e = np.matrix(sp.linalg.eigvals(A - B*K))                 # calculate eigenvalues
   return K,S,e
-
-def control(dt, N, end, error, plotarea, A, b, c, Gi, Gx, Gd, L): # a walk with controller
+  
+def control(cp_stop, pref, g, z_h, dt, N, end, error, plotarea, A, b, c, Gi, Gx, Gd, L): # a walk with controller
+  s = b.shape[0]            
   x1out = list()
   x2out = list()
   zmpout = list()
-  acc1out = list()
+  #acc1out = list()
   prefout = list()
-  x = np.matrix(np.zeros((6,1)))
+  #errorOut = list()
+  x = np.matrix(np.zeros((s,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
+  Xg = X
   v = 0
   for t in X:
     s = 0
@@ -266,19 +333,49 @@ def control(dt, N, end, error, plotarea, A, b, c, Gi, Gx, Gd, L): # a walk with 
     v = v + c * x - pref(t)
     x1out.append(x[0].item())
     x2out.append(x[3].item())
-    zmpout.append((c * x).item())
-    acc1out.append((x[2]).item())
+    zmpout.append((c * x).item())#
+    #errorOut.append(e(error,t)[0].item()+0.1)
+    #acc1out.append((x[2]).item())
     prefout.append(pref(t))
-  plotarea.plot(X, x1out, label="$c_{1,y}$", linewidth=2)
-  plotarea.plot(X, x2out, label="$c_{2,y}$", linewidth=2)
-  plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
-  #plotarea.plot(X, acc1out, linewidth=2, label="$\ddot{c_{1,y}}$")
-  plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
+
+  if cp_stop:
+    X2 = np.linspace(end, end + 5, 5*(1/dt))
+    Xg = np.linspace(0, end + 5, (end+5)*(1/dt))
+    
+    # Another loop for stopping with CP
+    v = 0
+    lp = prefout[-1]
+    init_x = x[0] #- lp
+    print("Initial position:" + str(init_x) + ", speed:" + str(x[1]))
+    cp = FLIPM_CP(init_x, x[1], g, z_h, dt) #+ lp
+    print("CP set to:" + str(cp - lp))
+    x[3] = x[0]
+    x[4] = x[1]
+    x[5] = 0  
+    x[2] = 0
+    for t in X2:
+      s = 0
+      for t2 in range(0, N):
+        s += Gd[t2] * cp
+      u = -Gi * v - Gx * x - s
+      x = A * x + b * u
+      v = v + c * x - cp
+      x1out.append(x[0].item())
+      x2out.append(x[3].item())
+      zmpout.append((c * x).item())
+      prefout.append(cp)    
+  
+  plotarea.plot(Xg, x1out, label="$c_{1,y}$", linewidth=2)
+  plotarea.plot(Xg, x2out, label="$c_{2,y}$", linewidth=2)
+  plotarea.plot(Xg, zmpout, linewidth=2, label="$p_y$")
+  #plotarea.plot(Xg, errorOut, linewidth=1, label="$error$")  
+  #plotarea.plot(Xg, acc1out, linewidth=2, label="$\ddot{c_{1,y}}$")  
+  plotarea.plot(Xg, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
   plotarea.legend(prop={'size':26}, borderpad=0.1, loc="upper left")
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
   plotarea.set_ylim([-0.15, 0.15])  
-  
+
 def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   x = np.matrix(np.zeros((6,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
@@ -292,7 +389,7 @@ def sim(dt, end, A, b, c, plotarea): # Just a simple demo
     x = A * x + b * u[t*(1/dt)]
     x1.append(x[0].item())
     x2.append(x[3].item())
-    
+
   plotarea.plot(X, x1, linewidth=2, label="$c_{1}$")
   plotarea.plot(X, x2, linewidth=2, label="$c_{2}$")
   plotarea.legend(prop={'size':11}, borderpad=0.1, loc="lower right")
@@ -300,40 +397,32 @@ def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   plotarea.set_ylabel('Position (y) [m]')
 
 def e(error, t): #Error
-  if t >=2 and t<2.1:
-    return error
-  #if t>=2:
-#    randomError = np.matrix(np.zeros((3, 1)))
-#    for i in range(len(error)):
-#        randomError[i] = error[i]* random.uniform(0, 1)
- #   return randomError
+#  if t >=2 and t<2.1:
+#    return error
+  if t>=2:
+    randomError = np.matrix(np.zeros((3, 1)))
+    for i in range(len(error)):
+        randomError[i] = error[i]* random.uniform(0, 1)
+    if t - sp.floor(t) < 0.5:
+        return -randomError
+    else:
+        return randomError
+    
   else:
     return np.matrix([0.0, 0.0, 0.0]).transpose()
 
-def pref(t):
+def pref_y(t):  
   if t < 1:
     return 0
   if t - sp.floor(t) < 0.5:
     return -0.05
   else:
     return 0.05
-    
-class StepControl:
-  def __init__(self, N, A, b, c, Gi, Gx, Gd):
-    self.N = N
-    self.A = A
-    self.b = b
-    self.c = c
-    self.Gi = Gi
-    self.Gx = Gx
-    self.Gd = Gd
-    x = np.matrix(np.zeros((6,1)))
-  def step(pref):
-    for i in range(0, N):
-      s += Gd[i] * pref[i]
-    u = -Gi * v - Gx * x - s
-    x = A * x + b * u
-    v = v + c * x - pref(0)
+
+def pref_x(t):
+  if t < 1:
+    return 0
+  return (t // 0.5) / 10
 
 class MatrixInput(tkinter.Frame):
     def __init__(self, observerframe, text, m, n, min, max, inc):
@@ -397,6 +486,7 @@ class FLIPMApp(tkinter.Frame):
     s["increment"] = inc
     s.pack(side = "right", fill = "x")
     self.values[text] = v
+
   def fillMenuBar(self):
     self.menuFile = tkinter.Menu(self.menuBar)
     self.menuFile.add_command(label = "Save Gains...", command = self.onSave)
@@ -442,6 +532,8 @@ class FLIPMApp(tkinter.Frame):
     #b.pack(fill = "x")
     b = tkinter.Button(frame, text="Simulate", command=self.onController)
     b.pack(fill = "x")
+    l = tkinter.Label(frame, text="", height=5)
+    l.pack()
     b = tkinter.Button(frame, text="Save Gains", command=self.saveFLIPM)
     b.pack(fill = "x")
     b = tkinter.Button(frame, text="Load Gains", command=self.loadFLIPM)
@@ -453,6 +545,8 @@ class FLIPMApp(tkinter.Frame):
     #b.pack(fill = "x")
     b = tkinter.Button(frame, text="Simulate", command=self.onController)
     b.pack(fill = "x")  
+    l = tkinter.Label(frame, text="", height=5)
+    l.pack()
     b = tkinter.Button(frame, text="Save Gains", command=self.saveFLIPM)
     b.pack(fill = "x")
     b = tkinter.Button(frame, text="Load Gains", command=self.loadFLIPM)
@@ -483,7 +577,7 @@ class FLIPMApp(tkinter.Frame):
     ########
     # Plot #
     ########       
-    f = Figure(figsize=(16,12), dpi=50, facecolor='white')
+    f = Figure(figsize=(16,12), dpi=50, facecolor='white')    
     self.a = f.add_subplot(111)
     self.canvas = FigureCanvasTkAgg(f, master=self)
     self.canvas.show()
@@ -508,26 +602,26 @@ class FLIPMApp(tkinter.Frame):
  
     load.insert(10,Ql)
     load.insert(11,RO)
-    #print(load)
-    
     self.setValues(*load[:14])
+    print("Gains loaded!")
     
   def saveFLIPM(self):
-    f = open('flipmValues.txt','w')
     save = getValues(self.values)
-    for i in range(0,len(save)):
-        if i != 10 and i != 11:        
-            f.write("%s\n" % save[i])
-    f.close()
-    np.savetxt("flipmOberverQl.txt", save[10])
-    np.savetxt("flipmOberverRO.txt", save[11])
+    if save[0] != 0:
+        f = open('flipmValues.txt','w')
+        for i in range(0,len(save)):
+            if i != 10 and i != 11:        
+                f.write("%s\n" % save[i])
+        f.close()
+        np.savetxt("flipmOberverQl.txt", save[10])
+        np.savetxt("flipmOberverRO.txt", save[11])
+        print("Gains saved!")
     
 
   def onSave(self): # m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, R0, N
     f = tkinter.filedialog.asksaveasfile()
     v = getValues(self.values)
-    g = gains(*v[:13]) # A, b, c, Gi, Gx, Gd, L
-    
+    g = flipm_gains(*v[:13]) # A, b, c, Gi, Gx, Gd    
     s = \
 """
 A = {{ content = [{}]; }};
@@ -564,7 +658,7 @@ N = {};
     f.close()
   def onSim(self):
     self.a.cla()
-    A, b, c, *r = gains(*getValues(self.values)[:13])
+    A, b, c, *r = flipm_gains(*getValues(self.values)[:13])
     sim(self.values["Frame Length"].get(), self.values["End"].get(), A, b, c, self.a)
     self.canvas.show()
   def onControl3D(self):
@@ -573,7 +667,7 @@ N = {};
   def onController(self, export = False):
     self.a.cla();
     try:
-        control(self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.values["e"].getMatrix(), self.a, *gains(*getValues(self.values)[:13]))
+        control(0, pref_y, self.values["Gravity"].get(),self.values["Height"].get(), self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.values["e"].getMatrix(), self.a, *flipm_gains(*getValues(self.values)[:13]))
         self.canvas.show()
     except ValueError as err:
         print(err)
