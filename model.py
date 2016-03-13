@@ -82,7 +82,8 @@ mpl.rcParams['ps.fonttype'] = 42
 # Damping has the same derivation
 
 simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
-controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 10, 7, 100, 100, 10**-10, 100, 5)
+controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100, 5)
+
 
 def main():
   noGui = False
@@ -124,13 +125,16 @@ def getValues(d):
           d["End"].get())
           
 def lipm_gains(m, g, z_h, dt, Qe, Qx, R, N):
+  gz = g/z_h*dt
   A = np.array(
       [[      1,     dt,       0],
-       [  g/z_h,      1,  -g/z_h],
+       [     gz,      1,     -gz],
        [      0,      0,       1]])
   b = np.matrix(np.array([0, 0, dt])).transpose()
   c = np.matrix(np.array([0, 0, 1]))
-  return A, b, c, gains(A, b, c, Qe, Qx, R, N)
+  c_x1 = np.matrix(np.array([1, 0, 0]))
+  c_x2 = np.matrix(np.array([0, 0, 0]))
+  return A, b, c, c_x1, c_x2, gains(A, b, c, Qe, Qx, R, N)
   
 def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   
@@ -139,7 +143,7 @@ def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
     Dm = D/m
     Em = E/m
     dt2 = dt**2/2
-    gz = g/z_h
+    gz = g/z_h*dt
     
     A = np.array(
   # From vector element        ------------->             to vector element
@@ -149,18 +153,34 @@ def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
    [       gz,        1,     -gz,       0,       0,        0,     0 ], # dx1
    [        0,        0,1-DM*dt2, -EM*dt2,  DM*dt2,   EM*dt2,     0 ], # p
    [        0,        0,  -DM*dt, 1-EM*dt,   DM*dt,    EM*dt,     0 ], # dp
-   [   Dm*dt2,   Em*dt2,       0,       0,1-Dm*dt2,dt-Em*dt2,   dt2 ], # x2
-   [    Dm*dt,    Em*dt,       0,       0,  -Dm*dt,  1-Em*dt,    dt ], # dx2
-   [       Dm,       Em,       0,       0,     -Dm,      -Em,     0 ]])# ddx2
-
+   [        0,        0,  Dm*dt2,  Em*dt2,1-Dm*dt2,dt-Em*dt2,   dt2 ], # x2
+   [        0,        0,   Dm*dt,   Em*dt,  -Dm*dt,  1-Em*dt,    dt ], # dx2
+   [        0,        0,       0,       0,       0,        0,     1 ]])# ddx2
+ 
 
     b = np.matrix(np.array([0, 0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
     c = np.matrix(np.array([0, 0, 1, 0, 0, 0, 0]))
-    return A, b, c, (*gains(A, b, c, Qe, Qx, R, N))
-  
+    c_x1 = np.matrix(np.array([1, 0, 0, 0, 0, 0, 0]))
+    c_x2 = np.matrix(np.array([0, 0, 0, 0, 1, 0, 0]))
+    return A, b, c, c_x1, c_x2, (*gains(A, b, c, Qe, Qx, R, N))
+
 def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   # Calculation of controller flipm_gains as explained in [2].
+  A = np.array(
+      [[      1,     dt, dt**2/2,       0,        0,       0 ],
+       [      0,      1,      dt,       0,        0,       0 ],
+       [   -D/M,   -E/M,       0,     D/M,      E/M,       0 ],
+       [      0,      0,       0,       1,       dt, dt**2/2 ],
+       [ D/m*dt, E/m*dt,       0, -D/m*dt, 1-E/m*dt,      dt ],
+       [      0,      0,       0,       0,        0,       1 ]])
+  b = np.matrix(np.array([0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
+  c = np.matrix(np.array([1, 0, -z_h/g, 0, 0, 0]))
+  c_x1 = np.matrix(np.array([1, 0, 0, 0, 0, 0]))
+  c_x2 = np.matrix(np.array([0, 0, 0, 1, 0, 0]))
+  return A, b, c, c_x1, c_x2, (*gains(A, b, c, Qe, Qx, R, N))
   
+def flipm_gains2(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
+  # New try with different integration
   DM = D/M
   EM = E/M
   Dm = D/m
@@ -180,7 +200,9 @@ def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
 
   b = np.matrix(np.array([0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
   c = np.matrix(np.array([1, 0, -z_h/g, 0, 0, 0]))
-  return A, b, c, (*gains(A, b, c, Qe, Qx, R, N))
+  c_x1 = np.matrix(np.array([1, 0, 0, 0, 0, 0]))
+  c_x2 = np.matrix(np.array([0, 0, 0, 1, 0, 0]))
+  return A, b, c, c_x1, c_x2, (*gains(A, b, c, Qe, Qx, R, N))
   
 def FLIPM_CP(x, dx, g, z_h, t = 0):
   om = np.sqrt(g/z_h)
@@ -222,7 +244,7 @@ def zsp(Gx, Gd, x, N):
   return z[0,0]
 
 def control(cp_stop, pref, g, z_h, dt, N, end, 
-            plotarea, A, b, c, Gi, 
+            plotarea, A, b, c, c_x1, c_x2, Gi, 
             Gx, Gd): # a walk with controller
   s = b.shape[0]          
   x1out = list()
@@ -241,8 +263,8 @@ def control(cp_stop, pref, g, z_h, dt, N, end,
     u = -Gi * v - Gx * x - s
     x = A * x + b * u
     v = v + c * x - pref(t)
-    x1out.append(x[0].item())
-    x2out.append(x[3].item())
+    x1out.append((c_x1 * x).item())
+    x2out.append((c_x2 * x).item())
     zmpout.append((c * x).item())
     prefout.append(pref(t))
 
@@ -268,8 +290,8 @@ def control(cp_stop, pref, g, z_h, dt, N, end,
       u = -Gi * v - Gx * x - s
       x = A * x + b * u
       v = v + c * x - cp
-      x1out.append(x[0].item())
-      x2out.append(x[3].item())
+      x1out.append((c_x1 * x).item())
+      x2out.append((c_x2 * x).item())
       zmpout.append((c * x).item())
       prefout.append(cp)    
     
@@ -280,6 +302,7 @@ def control(cp_stop, pref, g, z_h, dt, N, end,
   plotarea.legend(prop={'size':11}, borderpad=0.1)
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
+  
 def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   x = np.matrix(np.zeros((6,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
