@@ -82,7 +82,11 @@ mpl.rcParams['ps.fonttype'] = 42
 # Damping has the same derivation
 
 simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
+lanariControllerDefault = (1, 5, 9.81, 0.5, 0.0005, 1000, 2, 100, 1000, 10**-10, 100, 3)
 controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100, 5)
+
+# Für Tests mit CP
+#controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.005, 10000, 200, 10, 10, 10**-10, 200, 5)
 
 
 def main():
@@ -151,9 +155,9 @@ def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   #        x1       dx1        p       dp       x2       dx2   ddx2     \/
   [[        1,       dt,       0,       0,       0,        0,     0 ], # x1
    [       gz,        1,     -gz,       0,       0,        0,     0 ], # dx1
-   [        0,        0,1-DM*dt2, -EM*dt2,  DM*dt2,   EM*dt2,     0 ], # p
+   [        0,        0,       1,      dt, dt**2/2,        0,     0 ], # p
    [        0,        0,  -DM*dt, 1-EM*dt,   DM*dt,    EM*dt,     0 ], # dp
-   [        0,        0,  Dm*dt2,  Em*dt2,1-Dm*dt2,dt-Em*dt2,   dt2 ], # x2
+   [        0,        0,       0,       0,       1,       dt,   dt2 ], # x2
    [        0,        0,   Dm*dt,   Em*dt,  -Dm*dt,  1-Em*dt,    dt ], # dx2
    [        0,        0,       0,       0,       0,        0,     1 ]])# ddx2
  
@@ -242,6 +246,126 @@ def zsp(Gx, Gd, x, N):
   z = -Gx * x / sum(Gd)
   z = -Gx * x / sum(Gd)
   return z[0,0]
+  
+# A controller based on Lanari's work
+def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, plotarea):
+  prefout = list()
+  x1out = list()
+  x2out = list()
+  zmpout = list()
+  xcout = list()
+  ycout = list()
+  
+  Mb = 1/M + 1/m
+  om = np.sqrt(g/z_h)
+  xu0 = 0
+  for e in zip(T, α):
+    xu0 += e[1] * np.exp(-om * e[0])
+  xs0 = 0
+  Xc0 = (xu0 + xs0) / 2
+  Xcdot0 = (xu0 - xs0) * om / 2
+  XcStar0 = np.matrix([[Xc0], [Xcdot0]])
+  x0Flex = np.matrix([[0.], [-0.]])
+  τ = 0.001
+  
+  AFlex = np.matrix([[     0,         1],
+                    [-D * Mb,  - E * Mb]]);
+  BFlex = np.matrix([[0],
+                    [1 / m]]);
+  CFlex = np.matrix([D / M - Mb * E * τ / M, 
+                      E / M + τ / M * (D - Mb * E**2)]);
+  DFlex = τ * E / (M * m);
+  
+  Ai = AFlex - BFlex*CFlex/DFlex;
+  Bi = BFlex/DFlex;
+  Ci = -CFlex/DFlex;
+  Di = 1/DFlex;
+  
+  Al = np.matrix([[0, 1], [om**2, 0]])
+  Bl = np.matrix([[0], [-om**2]])
+  Cl = np.matrix([om**2, 0])
+  Dl = np.matrix([-om**2])
+  
+  Ac = np.matrix([[0, 1], [0, 0]])
+  Bc = np.matrix([[0], [1]])
+  Cc = np.matrix([[1, 0]])
+  Dc = np.matrix([-1/om**2])
+  
+  x_l = XcStar0.copy()
+  x_i = x0Flex.copy()
+  x   = np.matrix([[XcStar0[0].item()], 
+                   [XcStar0[1].item()],
+                   [0],
+                   [XcStar0[0].item()-x0Flex[0].item()],
+                   [XcStar0[1].item()-x0Flex[1].item()],
+                   [0]]) 
+  x_f = x0Flex.copy()
+  x_c = XcStar0.copy()
+  
+  X = np.linspace(0, end - dt, end*(1/dt))
+  X2 = np.linspace(end, end + 5, 5*(1/dt))
+  Xg = np.linspace(0, end + 5, (end+5)*(1/dt))
+  u_c = 0
+  y_i = 0
+  y_l = 0
+  y_f = 0
+  y_c = 0
+  for t in X:
+    if t < 1.8:
+      p   = pref_lanari(T, α, t)
+    if t == 1.8:
+      p = FLIPM_CP(x_l[0], x_l[1], g, z_h, dt)
+    
+    dx_l = Al * x_l + Bl * p
+    y_l_t = Cl * x_l + Dl * p
+    
+    dx_i = Ai * x_i + Bi * y_l
+    y_i_t = Ci * x_i + Di * y_l
+  
+    dx_f = AFlex * x_f + BFlex * y_i
+    y_f_t = CFlex * x_f + DFlex * y_i
+    
+    dx_c = Ac * x_c + Bc * y_f
+    y_c_t = Cc * x_c + Dc * y_f
+    
+    u_c = y_i_t  - y_i
+    
+    x_l += dt * dx_l
+    y_l = y_l_t
+  
+    x_i += dt * dx_i
+    y_i = y_i_t
+    
+    x_f += dt * dx_f
+    y_f = y_f_t
+    
+    x_c += dt * dx_c
+    y_c = y_c_t
+    
+    x   = A  * x   + B  * u_c / m / dt
+    y   = C  * x
+
+    x1out.append((x[0]).item())
+    x2out.append((x[3]).item())
+    zmpout.append(y.item())
+    xcout.append((x_c[0]).item())
+    ycout.append(y_c.item())
+    prefout.append(p)
+    
+  cp = FLIPM_CP(x[0], x[1], g, z_h, dt)
+  #for t in X2:
+    
+    
+  plotarea.plot(X, x1out, label="$c_{1,y}$", linestyle="dashed")
+  plotarea.plot(X, x2out, label="$c_{2,y}$")
+  plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
+  plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
+  plotarea.legend(prop={'size':11}, borderpad=0.1)
+  plotarea.set_xlabel('Time [s]')
+  plotarea.set_ylabel('Position (y) [m]')
+    
+  return
+            
 
 def control(cp_stop, pref, g, z_h, dt, N, end, 
             plotarea, A, b, c, c_x1, c_x2, Gi, 
@@ -277,8 +401,8 @@ def control(cp_stop, pref, g, z_h, dt, N, end,
     lp = prefout[-1]
     init_x = x[0] #- lp
     print("Initial position:" + str(init_x) + ", speed:" + str(x[1]))
-    cp = FLIPM_CP(init_x, x[1], g, z_h, dt) #+ lp
-    print("CP set to:" + str(cp - lp))
+    cp = FLIPM_CP(init_x, x[1], g, z_h, dt)#+ lp
+    print("CP set to:" + str(cp))
     x[3] = x[0]
     x[4] = x[1]
     x[5] = 0  
@@ -336,6 +460,15 @@ def pref_x(t):
   if t < 1:
     return 0
   return (t // 0.5) / 10
+  
+def pref_lanari(T, α, t):
+  s = 0
+  for e in zip(T, α):
+    s += e[1] * heaviside(t - e[0])
+  return s
+  
+def heaviside(t):
+  return 0.5 * (np.sign(t) + 1)
 
 class FLIPMApp(tkinter.Frame):
   def __init__(self, master=None):
@@ -345,8 +478,8 @@ class FLIPMApp(tkinter.Frame):
     master.config(menu = self.menuBar)
     self.fillMenuBar()
     self.pack()
-    self.onControllerDef()
-    self.onController()
+    #self.onLanariControllerDef()
+    #self.onLanariController()
   def addValue(self, text, min, max, inc):
     frame = tkinter.Frame(self.controlframe)
     frame.pack(fill = "x")
@@ -369,6 +502,8 @@ class FLIPMApp(tkinter.Frame):
     self.menuCommand.add_command(label = "Load Simulation Default", command = self.onSimDef)
     self.menuCommand.add_command(label = "Controller", command = self.onController)
     self.menuCommand.add_command(label = "Load Controller Default", command = self.onControllerDef)
+    self.menuCommand.add_command(label = "Load Lanari Controller Default", command = self.onLanariControllerDef)
+    self.menuCommand.add_command(label = "Lanari Controller", command = self.onLanariController)
     self.menuBar.add_cascade(label = "File", menu = self.menuFile)
     self.menuBar.add_cascade(label = "Commands", menu = self.menuCommand)
   def createWidgets(self):
@@ -444,8 +579,27 @@ N = {};
             self.values["End"].get(), self.a,
             *flipm_gains(*getValues(self.values)[:11]))
     self.canvas.show()
+  def onLanariController(self, export = False):
+    self.a.cla();
+    A, b, c, *r = flipm_gains(*getValues(self.values)[:11])
+    # bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, plotarea):
+    bcontrol(A, b, c, 
+             self.values["End"].get(),
+             self.values["Small Mass"].get(),
+             self.values["Large Mass"].get(),
+             self.values["Gravity"].get(),
+             self.values["Height"].get(),
+             self.values["Frame Length"].get(),
+             self.values["Spring Constant"].get(),
+             self.values["Damper Constant"].get(),
+             (0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5),
+             (-0.05, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
+             self.a)
+    self.canvas.show()
   def onControllerDef(self):
     self.setValues(*controllerDefault)
+  def onLanariControllerDef(self):
+    self.setValues(*lanariControllerDefault)
   def onSimDef(self):
     self.setValues(*simDefault)
   def setValues(self, m, M, g, z_h, dt, D, E, Qe, Qx, R, N, end):
