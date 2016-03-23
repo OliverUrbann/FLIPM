@@ -82,7 +82,12 @@ mpl.rcParams['ps.fonttype'] = 42
 # Damping has the same derivation
 
 simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
-lanariControllerDefault = (1, 5, 9.81, 0.5, 0.0005, 1000, 2, 100, 1000, 10**-10, 100, 3)
+
+# Schwierig zu regeln für Preview, Qx 150, Qe 100
+# Höhere Frequenz hilft hier, aber dauert länger, zb 0.0025 N=400
+lanariControllerDefault = (1, 5, 9.81, 0.5, 0.0005, 1000, 2, 0.001, 1000, 10**-10, 100, 3)
+# tau Problem bei höheren Dämpfungen
+# Qe bei Lanari von 0.0004 ist bei E=200 besser, höhere Frequenzen ebenfalls besser
 controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100, 5)
 
 # Für Tests mit CP
@@ -192,15 +197,15 @@ def flipm_gains2(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   dt2 = dt**2/2
 
   A = np.array(
-# From vector element      ------------->       to vector element
-#                                                              ||
-#       x1       dx1     ddx1       x2       dx2     ddx2      \/
-[[1-DM*dt2,dt-EM*dt2,     dt2,  DM*dt2,   EM*dt2,       0 ], # x1
- [  -DM*dt,  1-EM*dt,      dt,   DM*dt,    EM*dt,       0 ], # dx1
- [     -DM,      -EM,       1,      DM,       EM,       0 ], # ddx1
- [  Dm*dt2,   Em*dt2,       0,1-Dm*dt2,dt-Em*dt2,     dt2 ], # x2
- [   Dm*dt,    Em*dt,       0,  -Dm*dt,  1-Em*dt,      dt ], # dx2
- [      Dm,       Em,       0,     -Dm,      -Em,       0 ]])# ddx2
+  # From vector element      ------------->       to vector element
+  #                                                              ||
+  #       x1       dx1     ddx1       x2       dx2     ddx2      \/
+  [[1-DM*dt2,dt-EM*dt2,     dt2,  DM*dt2,   EM*dt2,       0 ], # x1
+   [  -DM*dt,  1-EM*dt,      dt,   DM*dt,    EM*dt,       0 ], # dx1
+   [     -DM,      -EM,       1,      DM,       EM,       0 ], # ddx1
+   [  Dm*dt2,   Em*dt2,       0,1-Dm*dt2,dt-Em*dt2,     dt2 ], # x2
+   [   Dm*dt,    Em*dt,       0,  -Dm*dt,  1-Em*dt,      dt ], # dx2
+   [      Dm,       Em,       0,     -Dm,      -Em,       0 ]])# ddx2
 
   b = np.matrix(np.array([0, 0, 0, dt**3 / 6, dt**2 / 2, dt])).transpose()
   c = np.matrix(np.array([1, 0, -z_h/g, 0, 0, 0]))
@@ -241,14 +246,47 @@ def gains(A, b, c, Qe, Qx, R, N):
   return Gi, Gx, Gd
   
 def zsp(Gx, Gd, x, N):
-# 0 = -Gx * x - sum(Gd * z)
-# -Gx * x = z * sum(Gd)
+  # 0 = -Gx * x - sum(Gd * z)
+  # -Gx * x = z * sum(Gd)
   z = -Gx * x / sum(Gd)
   z = -Gx * x / sum(Gd)
   return z[0,0]
   
-# A controller based on Lanari's work
-def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, plotarea):
+class BoundedAnalytical:  
+  def c1d(self, T, α, t, g, z_h):
+    om = np.sqrt(g/z_h)
+    c1d = 0
+    for (Ti, α1) in zip(T, α):
+      c1d += α1 * 0.5 * (np.exp(om * (t - Ti)) * (1 - heaviside(t - Ti)) + \
+             (2 - np.exp(-om * (t - Ti))) * heaviside(t - Ti))
+    return c1d
+  def dc1d(self, T, α, t, g, z_h):
+    om = np.sqrt(g/z_h)
+    dc1d = 0
+    for (Ti, α1) in zip(T, α):
+      dc1d += α1 * om * 0.5 * (np.exp(om * (t - Ti)) * (1 - heaviside(t - Ti)) + \
+              np.exp(-om * (t - Ti)) * heaviside(t - Ti))
+    return dc1d
+  def bacontrol(self, A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
+    prefout = list()
+    c1d = list()
+    dc1d = list()
+    
+    X = np.linspace(0, end - dt, end*(1/dt))
+    for t in X:
+      c1d.append(self.c1d(T, α, t, g, z_h))
+      dc1d.append(self.dc1d(T, α, t, g, z_h))
+      prefout.append(pref_lanari(T, α, t))
+    
+    plotarea.plot(X, c1d, label="$c_1^d$", linestyle="dashed")
+    plotarea.plot(X, dc1d, label="$\dot{c_1}^d$", linestyle="dashed")
+    plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
+    plotarea.legend(prop={'size':11}, borderpad=0.1)
+    plotarea.set_xlabel('Time [s]')
+    plotarea.set_ylabel('Position (y) [m]')
+  
+# A controller based on Lanari's work, iterative version
+def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
   prefout = list()
   x1out = list()
   x2out = list()
@@ -266,7 +304,6 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, plotarea):
   Xcdot0 = (xu0 - xs0) * om / 2
   XcStar0 = np.matrix([[Xc0], [Xcdot0]])
   x0Flex = np.matrix([[0.], [-0.]])
-  τ = 0.001
   
   AFlex = np.matrix([[     0,         1],
                     [-D * Mb,  - E * Mb]]);
@@ -358,7 +395,10 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, plotarea):
     
   plotarea.plot(X, x1out, label="$c_{1,y}$", linestyle="dashed")
   plotarea.plot(X, x2out, label="$c_{2,y}$")
+  #plotarea.plot(X, xcout, label="$c_{1,y}$", linestyle="dashed")
+  #plotarea.plot(X, x2out, label="$c_{2,y}$")
   plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
+  #plotarea.plot(X, ycout, linewidth=2, label="$p_y$")
   plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
   plotarea.legend(prop={'size':11}, borderpad=0.1)
   plotarea.set_xlabel('Time [s]')
@@ -367,9 +407,7 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, plotarea):
   return
             
 
-def control(cp_stop, pref, g, z_h, dt, N, end, 
-            plotarea, A, b, c, c_x1, c_x2, Gi, 
-            Gx, Gd): # a walk with controller
+def control(cp_stop, pref, g, z_h, dt, N, end, plotarea, A, b, c, c_x1, c_x2, Gi, Gx, Gd): # a walk with controller
   s = b.shape[0]          
   x1out = list()
   x2out = list()
@@ -478,8 +516,8 @@ class FLIPMApp(tkinter.Frame):
     master.config(menu = self.menuBar)
     self.fillMenuBar()
     self.pack()
-    #self.onLanariControllerDef()
-    #self.onLanariController()
+    self.onLanariControllerDef()
+    self.onAnalyticalBoundednessController()
   def addValue(self, text, min, max, inc):
     frame = tkinter.Frame(self.controlframe)
     frame.pack(fill = "x")
@@ -504,6 +542,7 @@ class FLIPMApp(tkinter.Frame):
     self.menuCommand.add_command(label = "Load Controller Default", command = self.onControllerDef)
     self.menuCommand.add_command(label = "Load Lanari Controller Default", command = self.onLanariControllerDef)
     self.menuCommand.add_command(label = "Lanari Controller", command = self.onLanariController)
+    self.menuCommand.add_command(label = "Boundedness Controller (analytical)", command = self.onAnalyticalBoundednessController)
     self.menuBar.add_cascade(label = "File", menu = self.menuFile)
     self.menuBar.add_cascade(label = "Commands", menu = self.menuCommand)
   def createWidgets(self):
@@ -535,31 +574,31 @@ class FLIPMApp(tkinter.Frame):
     v = getValues(self.values)
     g = flipm_gains(*v[:11]) # A, b, c, Gi, Gx, Gd
     s = \
-"""
-A = {{ content = [{}]; }};
-b = {{ content = [{}]; }};
-c = {{ content = [{}]; }};
-Gi = {};
-Gx = {{ content = [{}]; }};
-Gd = {{ content = [{}]; }};
-m = {};
-M = {};
-g = {};
-z_h = {};
-dt = {};
-D = {};
-E = {};
-Qe = {};
-Qx = {};
-R = {};
-N = {};
-""".format(",".join(map(str, map(float, g[0].flatten()))),
-           ",".join(map(str, map(float, g[1]))),
-           ",".join(map(str, map(float, g[2].tolist()[0]))),
-           float(g[3]),
-           ",".join(map(str, map(float, g[4].flatten().tolist()[0]))),
-           ",".join(map(str, map(float, g[5]))),
-           *(map(str, v)))
+    """
+    A = {{ content = [{}]; }};
+    b = {{ content = [{}]; }};
+    c = {{ content = [{}]; }};
+    Gi = {};
+    Gx = {{ content = [{}]; }};
+    Gd = {{ content = [{}]; }};
+    m = {};
+    M = {};
+    g = {};
+    z_h = {};
+    dt = {};
+    D = {};
+    E = {};
+    Qe = {};
+    Qx = {};
+    R = {};
+    N = {};
+    """.format(",".join(map(str, map(float, g[0].flatten()))),
+               ",".join(map(str, map(float, g[1]))),
+               ",".join(map(str, map(float, g[2].tolist()[0]))),
+               float(g[3]),
+               ",".join(map(str, map(float, g[4].flatten().tolist()[0]))),
+               ",".join(map(str, map(float, g[5]))),
+               *(map(str, v)))
     f.write(s)
     f.close()
   def onSim(self):
@@ -594,6 +633,28 @@ N = {};
              self.values["Damper Constant"].get(),
              (0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5),
              (-0.05, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
+             self.values["Qe"].get(),
+             self.a)
+    self.canvas.show()
+    
+  def onAnalyticalBoundednessController(self, export = False):
+    self.a.cla();
+    ba = BoundedAnalytical()
+    A, b, c, *r = flipm_gains(*getValues(self.values)[:11])
+    ba.bacontrol(A, b, c, 
+             self.values["End"].get(),
+             self.values["Small Mass"].get(),
+             self.values["Large Mass"].get(),
+             self.values["Gravity"].get(),
+             self.values["Height"].get(),
+             self.values["Frame Length"].get(),
+             self.values["Spring Constant"].get(),
+             self.values["Damper Constant"].get(),
+             (0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5),
+             (-0.05, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
+             #list([0.5]),
+             #list([-0.05]),
+             self.values["Qe"].get(),
              self.a)
     self.canvas.show()
   def onControllerDef(self):
