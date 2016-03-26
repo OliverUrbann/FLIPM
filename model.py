@@ -48,6 +48,7 @@ import tkinter.filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 from matplotlib.figure import Figure
 import sys
+import time
 
 __author__ = "Oliver Urbann"
 __copyright__ = "Copyright 2015, Oliver Urbann"
@@ -85,7 +86,8 @@ simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
 
 # Schwierig zu regeln für Preview, Qx 150, Qe 100
 # Höhere Frequenz hilft hier, aber dauert länger, zb 0.0025 N=400
-lanariControllerDefault = (1, 5, 9.81, 0.5, 0.0005, 1000, 2, 0.001, 1000, 10**-10, 100, 3)
+# b = 2 einfacher
+lanariControllerDefault = (1, 5, 9.81, 0.5, 0.0005, 1000, 200, 0.001, 1000, 10**-10, 100, 3)
 # tau Problem bei höheren Dämpfungen
 # Qe bei Lanari von 0.0004 ist bei E=200 besser, höhere Frequenzen ebenfalls besser
 controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100, 5)
@@ -110,6 +112,9 @@ def main():
       sim(simDefault[4],simDefault[11], g[0], g[1], g[2], ax1)
       plt.savefig("paper/build/FLIPMmodel" + ".pdf", format='pdf', bbox_inches='tight')
       noGui = True
+    if arg == '-b':
+      plotBounded()
+      noGui = True
     if arg.startswith('-l='): # Print gain tables in latex
       m.dump(open(arg[3:] + "A.tex",'w'))
       noGui = True
@@ -119,6 +124,87 @@ def main():
   app = FLIPMApp(root)
   app.mainloop()
  
+def plotBounded():
+  # Figure for working stopping step
+  print("Plotting iterative.pdf")
+  fig1 = plt.figure(figsize=(5, 2), dpi=150)
+  ax1 = fig1.add_subplot(111)
+  params = (1, 5, 9.81, 0.5, 0.0005, 1000, 2, 0.001, 1000, 10**-10, 100, 3)
+  A, b, c, *r = flipm_gains(*params[:11])
+  bcontrol(A, b, c, params[11], params[0], params[1], params[2],
+           params[3], params[4], params[5], params[6],
+           (0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5),
+           (-0.05, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
+           params[7],
+           ax1)
+  plt.savefig("iterative" + ".pdf", format='pdf', bbox_inches='tight')
+  
+  print("Plotting b=20,tau=001.pdf")
+  fig1 = plt.figure(figsize=(5, 2), dpi=150)
+  ax1 = fig1.add_subplot(111)
+  params = (1, 5, 9.81, 0.5, 0.0005, 1000, 20, 0.001, 1000, 10**-10, 100, 2.5)
+  A, b, c, *r = flipm_gains(*params[:11])
+  bcontrol(A, b, c, params[11], params[0], params[1], params[2],
+           params[3], params[4], params[5], params[6],
+           (0.5, 1, 1.5, 20, 2.5, 3, 3.5, 4, 4.5),
+           (-0.05, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
+           params[7],
+           ax1)
+  plt.savefig("b=20,tau=001" + ".pdf", format='pdf', bbox_inches='tight')
+  
+  print("Plotting b=200,tau=001.pdf")
+  fig1 = plt.figure(figsize=(5, 2), dpi=150)
+  ax1 = fig1.add_subplot(111)
+  params = (1, 5, 9.81, 0.5, 0.0005, 1000, 200, 0.001, 1000, 10**-10, 100, 2.5)
+  A, b, c, *r = flipm_gains(*params[:11])
+  bcontrol(A, b, c, params[11], params[0], params[1], params[2],
+           params[3], params[4], params[5], params[6],
+           (0.5, 1, 1.5, 20, 2.5, 3, 3.5, 4, 4.5),
+           (-0.05, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
+           params[7],
+           ax1)
+  plt.savefig("b=200,tau=001" + ".pdf", format='pdf', bbox_inches='tight')
+  
+  print("Plotting b=200,tau=0005.pdf")
+  fig1 = plt.figure(figsize=(5, 2), dpi=150)
+  ax1 = fig1.add_subplot(111)
+  params = (1, 5, 9.81, 0.5, 0.0005, 1000, 200, 0.0005, 1000, 10**-10, 100, 2.5)
+  A, b, c, *r = flipm_gains(*params[:11])
+  bcontrol(A, b, c, params[11], params[0], params[1], params[2],
+           params[3], params[4], params[5], params[6],
+           (0.5, 1, 1.5, 20, 2.5, 3, 3.5, 4, 4.5),
+           (-0.05, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
+           params[7],
+           ax1)
+  plt.savefig("b=200,tau=0005" + ".pdf", format='pdf', bbox_inches='tight')
+  
+  print("Plotting b=200,tau=00025.pdf")
+  fig1 = plt.figure(figsize=(5, 2), dpi=150)
+  ax1 = fig1.add_subplot(111)
+  params = (1, 5, 9.81, 0.5, 0.0005, 1000, 200, 0.00025, 1000, 10**-10, 100, 2.5)
+  A, b, c, *r = flipm_gains(*params[:11])
+  bcontrol(A, b, c, params[11], params[0], params[1], params[2],
+           params[3], params[4], params[5], params[6],
+           (0.5, 1, 1.5, 20, 2.5, 3, 3.5, 4, 4.5),
+           (-0.05, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
+           params[7],
+           ax1)
+  plt.savefig("b=200,tau=00025" + ".pdf", format='pdf', bbox_inches='tight')
+  
+  return
+  
+  print("preview.pdf")
+  fig1 = plt.figure(figsize=(5, 2), dpi=150)
+  ax1 = fig1.add_subplot(111)
+  params = (1, 5, 9.81, 0.5, 0.0005, 1000, 200, 0.1, 0.001, 10**-10, 2000, 3)
+  # Preview 2000 and dt = 0.0005
+  A, b, c, *r = flipm_gains(*params[:11])
+  control(0, pref_y, params[2], params[3], params[4], params[10],
+          params[11], ax1, *flipm_gains(*params[:11]))
+  plt.savefig("preview" + ".pdf", format='pdf', bbox_inches='tight')
+  
+  
+  
 def getValues(d):
   return (d["Small Mass"].get(),
           d["Large Mass"].get(),
@@ -172,6 +258,19 @@ def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
     c_x1 = np.matrix(np.array([1, 0, 0, 0, 0, 0, 0]))
     c_x2 = np.matrix(np.array([0, 0, 0, 0, 1, 0, 0]))
     return A, b, c, c_x1, c_x2, (*gains(A, b, c, Qe, Qx, R, N))
+
+def flipm_gains4D(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
+  # Calculation of controller flipm_gains as explained in [2].
+  A = np.array(
+      [[      1,      dt,        0,        0],
+       [-D/M*dt,1-E/M*dt,   D/M*dt,   E/M*dt],
+       [      0,       0,        1,       dt],
+       [ D/m*dt,  E/m*dt,  -D/m*dt, 1-E/m*dt]])
+  b = np.matrix(np.array([0, 0, dt**2 / 2, dt])).transpose()
+  c = np.matrix(np.array([1+D/M*z_h/g,E/M*z_h/g, -D/M*z_h/g, -E/M*z_h/g]))
+  c_x1 = np.matrix(np.array([1, 0, 0, 0]))
+  c_x2 = np.matrix(np.array([0, 0, 1, 0]))
+  return A, b, c, c_x1, c_x2, (*gains(A, b, c, Qe, Qx, R, N))
 
 def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   # Calculation of controller flipm_gains as explained in [2].
@@ -267,19 +366,70 @@ class BoundedAnalytical:
       dc1d += α1 * om * 0.5 * (np.exp(om * (t - Ti)) * (1 - heaviside(t - Ti)) + \
               np.exp(-om * (t - Ti)) * heaviside(t - Ti))
     return dc1d
+  def ddc1d(self, T, α, t, g, z_h):
+    om = np.sqrt(g/z_h)
+    ddc1d = 0
+    for (Ti, α1) in zip(T, α):
+      ddc1d += α1 * om**2 * 0.5 * (np.exp(om * (t - Ti)) * (1 - heaviside(t - Ti)) - np.exp(-om * (t - Ti)) * heaviside(t - Ti))
+    return ddc1d
+  def dddc1d(self, T, α, t, g, z_h, dt):
+    om = np.sqrt(g/z_h)
+    dddc1d = 0
+    for (Ti, α1) in zip(T, α):
+      dddc1d += α1 * om**3 * 0.5 * (np.exp(om * (t - Ti)) * (1 - heaviside(t - Ti)) + \
+                np.exp(-om * (t - Ti)) * heaviside(t - Ti)) - om**2 * impulse(Ti, t, dt)
+    return dddc1d
+  def η(self, T, α, t, g, z_h, k, b, M):
+    om = np.sqrt(g/z_h)
+    η = 0
+    for (Ti, α1) in zip(T, α):
+      η += α1 * om**2 * 0.5 * M / b / (om + k/b) * (np.exp(om * (t - Ti)) * (1 - heaviside(t - Ti)) + np.exp(-k/b * (t - Ti)) * heaviside(t - Ti) - np.exp(-k/b * t - om * Ti)) \
+     - α1 * om**2 * 0.5 * M / b / (-om + k/b) * ((np.exp(-om * (t - Ti)) - np.exp(-k/b * (t - Ti))) * heaviside(t - Ti))  
+    return η
+  def ud(self, T, α, t, g, z_h, k, b, M, m, dt):
+    η = self.η(T, α, t, g, z_h, k, b, M)
+    ddc1d = self.ddc1d(T, α, t, g, z_h)
+    dddc1d  = self.dddc1d(T, α, t, g, z_h, dt)  
+    return m*k**2/b**2 * η - M*m/b * (k/b-b*(m+M)/M*m) * ddc1d + M*m/b * dddc1d
+    
   def bacontrol(self, A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
     prefout = list()
     c1d = list()
+    c2d = list()
     dc1d = list()
+    ud = list()
+    x1out = list()
+    x2out = list()
+    zmpout = list()
+    y = np.matrix(0)
+    
+    x   = np.matrix([[self.c1d(T, α, 0, g, z_h)], 
+                     [self.dc1d(T, α, 0, g, z_h)],
+                     [self.c1d(T, α, 0, g, z_h)],
+                     [self.dc1d(T, α, 0, g, z_h)]])
     
     X = np.linspace(0, end - dt, end*(1/dt))
+    ud.append(self.ud(T, α, 0, g, z_h, D, E, M, m, dt))
     for t in X:
       c1d.append(self.c1d(T, α, t, g, z_h))
-      dc1d.append(self.dc1d(T, α, t, g, z_h))
+      c2d.append(c1d[-1] + self.η(T, α, t, g, z_h, D, E, M))
+      ud.append(self.ud(T, α, t, g, z_h, D, E, M, m, dt))
       prefout.append(pref_lanari(T, α, t))
+
+      x   = A  * x   + B  * ud[-1] / m
+      y   = C  * x
+      
+      x1out.append((x[0]).item())
+      x2out.append((x[2]).item())
+      zmpout.append(y.item())
+      
+      
     
-    plotarea.plot(X, c1d, label="$c_1^d$", linestyle="dashed")
-    plotarea.plot(X, dc1d, label="$\dot{c_1}^d$", linestyle="dashed")
+    #plotarea.plot(X, c1d, label="$c_1^d$", linestyle="dashed")
+    #plotarea.plot(X, c2d, label="$c_2^d$")
+    plotarea.plot(X, x1out, label="$c_{1,y}$", linestyle="dashed")
+    plotarea.plot(X, x2out, label="$c_{2,y}$")
+    plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
     plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
     plotarea.legend(prop={'size':11}, borderpad=0.1)
     plotarea.set_xlabel('Time [s]')
@@ -347,7 +497,9 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
   y_l = 0
   y_f = 0
   y_c = 0
+  start = time.time()
   for t in X:
+    
     if t < 1.8:
       p   = pref_lanari(T, α, t)
     if t == 1.8:
@@ -359,11 +511,11 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
     dx_i = Ai * x_i + Bi * y_l
     y_i_t = Ci * x_i + Di * y_l
   
-    dx_f = AFlex * x_f + BFlex * y_i
-    y_f_t = CFlex * x_f + DFlex * y_i
+    #dx_f = AFlex * x_f + BFlex * y_i
+    #y_f_t = CFlex * x_f + DFlex * y_i
     
-    dx_c = Ac * x_c + Bc * y_f
-    y_c_t = Cc * x_c + Dc * y_f
+    #dx_c = Ac * x_c + Bc * y_f
+    #y_c_t = Cc * x_c + Dc * y_f
     
     u_c = y_i_t  - y_i
     
@@ -373,11 +525,11 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
     x_i += dt * dx_i
     y_i = y_i_t
     
-    x_f += dt * dx_f
-    y_f = y_f_t
+    #x_f += dt * dx_f
+    #y_f = y_f_t
     
-    x_c += dt * dx_c
-    y_c = y_c_t
+    #x_c += dt * dx_c
+    #y_c = y_c_t
     
     x   = A  * x   + B  * u_c / m / dt
     y   = C  * x
@@ -385,21 +537,23 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
     x1out.append((x[0]).item())
     x2out.append((x[3]).item())
     zmpout.append(y.item())
-    xcout.append((x_c[0]).item())
-    ycout.append(y_c.item())
+    #xcout.append((x_c[0]).item())
+    #ycout.append(y_c.item())
     prefout.append(p)
     
+  end = time.time()
+  print("Time taken for bounded controll:" + str(end - start))
   cp = FLIPM_CP(x[0], x[1], g, z_h, dt)
   #for t in X2:
     
     
-  plotarea.plot(X, x1out, label="$c_{1,y}$", linestyle="dashed")
-  plotarea.plot(X, x2out, label="$c_{2,y}$")
+  plotarea.plot(X, x1out, label="$c_{1,y}^d$", linestyle="dashed")
+  plotarea.plot(X, x2out, label="$c_{2,y}^d$")
   #plotarea.plot(X, xcout, label="$c_{1,y}$", linestyle="dashed")
   #plotarea.plot(X, x2out, label="$c_{2,y}$")
-  plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
+  plotarea.plot(X, zmpout, linewidth=2, label="$x_{zmp}$")
   #plotarea.plot(X, ycout, linewidth=2, label="$p_y$")
-  plotarea.plot(X, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
+  plotarea.plot(X, prefout, linewidth=2, label="$x_{zmp}^d$", linestyle="dashed")
   plotarea.legend(prop={'size':11}, borderpad=0.1)
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
@@ -418,6 +572,7 @@ def control(cp_stop, pref, g, z_h, dt, N, end, plotarea, A, b, c, c_x1, c_x2, Gi
   X = np.linspace(0, end - dt, end*(1/dt))
   Xg = X
   v = 0
+  start = time.time()
   for t in X:
     s = 0
     for t2 in range(0, N):
@@ -429,6 +584,9 @@ def control(cp_stop, pref, g, z_h, dt, N, end, plotarea, A, b, c, c_x1, c_x2, Gi
     x2out.append((c_x2 * x).item())
     zmpout.append((c * x).item())
     prefout.append(pref(t))
+  end = time.time()
+  
+  print("Time taken for preview controll:" + str(end - start))
 
   if cp_stop:
     X2 = np.linspace(end, end + 5, 5*(1/dt))
@@ -459,8 +617,8 @@ def control(cp_stop, pref, g, z_h, dt, N, end, plotarea, A, b, c, c_x1, c_x2, Gi
     
   plotarea.plot(Xg, x1out, label="$c_{1,y}$", linestyle="dashed")
   plotarea.plot(Xg, x2out, label="$c_{2,y}$")
-  plotarea.plot(Xg, zmpout, linewidth=2, label="$p_y$")
-  plotarea.plot(Xg, prefout, linewidth=2, label="$p^{ref}_y$", linestyle="dashed")
+  plotarea.plot(Xg, zmpout, linewidth=2, label="$x_{zmp}$")
+  plotarea.plot(Xg, prefout, linewidth=2, label="$x_{zmp}^d$", linestyle="dashed")
   plotarea.legend(prop={'size':11}, borderpad=0.1)
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
@@ -508,6 +666,15 @@ def pref_lanari(T, α, t):
 def heaviside(t):
   return 0.5 * (np.sign(t) + 1)
 
+
+
+
+def impulse(t1, t2, dt):
+  if abs(t1-t2) < dt/4:
+    return 100
+  else:
+    return 0
+  
 class FLIPMApp(tkinter.Frame):
   def __init__(self, master=None):
     tkinter.Frame.__init__(self, master)
@@ -533,8 +700,11 @@ class FLIPMApp(tkinter.Frame):
     self.values[text] = v
 
   def fillMenuBar(self):
+    # File menu
     self.menuFile = tkinter.Menu(self.menuBar)
     self.menuFile.add_command(label = "Save Gains...", command = self.onSave)
+    
+    # Commands menu
     self.menuCommand = tkinter.Menu(self.menuBar)
     self.menuCommand.add_command(label = "Simulate", command = self.onSim)
     self.menuCommand.add_command(label = "Load Simulation Default", command = self.onSimDef)
@@ -543,8 +713,14 @@ class FLIPMApp(tkinter.Frame):
     self.menuCommand.add_command(label = "Load Lanari Controller Default", command = self.onLanariControllerDef)
     self.menuCommand.add_command(label = "Lanari Controller", command = self.onLanariController)
     self.menuCommand.add_command(label = "Boundedness Controller (analytical)", command = self.onAnalyticalBoundednessController)
+    
+    # Plotting menu
+    self.menuPlot = tkinter.Menu(self.menuBar)
+    self.menuPlot.add_command(label = "Plot Bounded", command = self.onPlotBounded)
+    # Add everything
     self.menuBar.add_cascade(label = "File", menu = self.menuFile)
     self.menuBar.add_cascade(label = "Commands", menu = self.menuCommand)
+    self.menuBar.add_cascade(label = "Plot", menu = self.menuPlot)
   def createWidgets(self):
     self.values = {}
     self.controlframe = tkinter.Frame(self)
@@ -621,7 +797,6 @@ class FLIPMApp(tkinter.Frame):
   def onLanariController(self, export = False):
     self.a.cla();
     A, b, c, *r = flipm_gains(*getValues(self.values)[:11])
-    # bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, plotarea):
     bcontrol(A, b, c, 
              self.values["End"].get(),
              self.values["Small Mass"].get(),
@@ -640,7 +815,7 @@ class FLIPMApp(tkinter.Frame):
   def onAnalyticalBoundednessController(self, export = False):
     self.a.cla();
     ba = BoundedAnalytical()
-    A, b, c, *r = flipm_gains(*getValues(self.values)[:11])
+    A, b, c, *r = flipm_gains4D(*getValues(self.values)[:11])
     ba.bacontrol(A, b, c, 
              self.values["End"].get(),
              self.values["Small Mass"].get(),
@@ -661,6 +836,9 @@ class FLIPMApp(tkinter.Frame):
     self.setValues(*controllerDefault)
   def onLanariControllerDef(self):
     self.setValues(*lanariControllerDefault)
+    
+  def onPlotBounded(self):
+      plotBounded()
   def onSimDef(self):
     self.setValues(*simDefault)
   def setValues(self, m, M, g, z_h, dt, D, E, Qe, Qx, R, N, end):
