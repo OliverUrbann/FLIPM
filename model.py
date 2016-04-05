@@ -119,7 +119,6 @@ flipmDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10,
                                          [0,  10**4, 0],
                                          [0,  0, 10**4]])),
                      100, 5)
-
 error = np.matrix([0.0, 0.0, 0.0]).transpose()
 
 def main():
@@ -159,7 +158,7 @@ def getValues(d):
           d["Qx"].get(),
           d["R"].get(),
           d["Ql"].getMatrix(),
-          d["RO"].getMatrix(),
+          d["RO"].getMatrix()*d["RO_Multiplikator"].get(),
           int(sp.floor(d["N"].get())),
           d["End"].get())
           
@@ -198,7 +197,7 @@ def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
     c = np.matrix(np.array([0, 0, 1, 0, 0, 0, 0]))
     return A, b, c, gains(A, b, c, Qe, Qx, R, Ql, RO, N)
   
-def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
+def flipm_gains(flipmNew,m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
   # Calculation of controller flipm_gains as explained in [2].
   
   DM = D/M
@@ -207,16 +206,28 @@ def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N):
   Em = E/m
   dt2 = dt**2/2
 
-  A = np.array(
-# From vector element      ------------->       to vector element
-#                                                              ||
-#       x1       dx1     ddx1       x2       dx2     ddx2      \/
-[[1-DM*dt2,dt-EM*dt2,     dt2,  DM*dt2,   EM*dt2,       0 ], # x1
- [  -DM*dt,  1-EM*dt,      dt,   DM*dt,    EM*dt,       0 ], # dx1
- [     -DM,      -EM,       1,      DM,       EM,       0 ], # ddx1
- [  Dm*dt2,   Em*dt2,       0,1-Dm*dt2,dt-Em*dt2,     dt2 ], # x2
- [   Dm*dt,    Em*dt,       0,  -Dm*dt,  1-Em*dt,      dt ], # dx2
- [      Dm,       Em,       0,     -Dm,      -Em,       0 ]])# ddx2
+  if flipmNew: 
+      ###################################
+      ### New FLIPM matrix 03.03.2016 ###
+      ###################################
+      A = np.array(
+      # From vector element      ------------->       to vector element
+      #                                                              ||
+      #       x1       dx1     ddx1       x2       dx2     ddx2      \/
+      [[1-DM*dt2,dt-EM*dt2,     dt2,  DM*dt2,   EM*dt2,       0 ], # x1
+       [  -DM*dt,  1-EM*dt,      dt,   DM*dt,    EM*dt,       0 ], # dx1
+       [     -DM,      -EM,       1,      DM,       EM,       0 ], # ddx1
+       [  Dm*dt2,   Em*dt2,       0,1-Dm*dt2,dt-Em*dt2,     dt2 ], # x2
+       [   Dm*dt,    Em*dt,       0,  -Dm*dt,  1-Em*dt,      dt ], # dx2
+       [      Dm,       Em,       0,     -Dm,      -Em,       0 ]])# ddx2
+  else:
+      A = np.array(
+      [[      1,     dt,     dt2,       0,        0,       0 ],
+       [      0,      1,      dt,       0,        0,       0 ],
+       [    -DM,    -EM,       0,      DM,       EM,       0 ],
+       [      0,      0,       0,       1,       dt,     dt2 ],
+       [  Dm*dt,  Em*dt,       0,  -Dm*dt,  1-Em*dt,      dt ],
+       [      0,      0,       0,       0,        0,       1 ]])
 
   b = np.matrix(np.array([0, 0, 0, dt**3 / 6, dt2, dt])).transpose()
   c = np.matrix(np.array([1, 0, -z_h/g, 0, 0, 0]))
@@ -312,14 +323,14 @@ def dlrq(A,B,Q,R) :                                         # http://de.mathwork
   e = np.matrix(sp.linalg.eigvals(A - B*K))                 # calculate eigenvalues
   return K,S,e
   
-def control(cp_stop, pref, g, z_h, dt, N, end, error, plotarea, A, b, c, Gi, Gx, Gd, L): # a walk with controller
+def control(cp_stop, pref, g, z_h, dt, N, end, error, singleError, plotarea, A, b, c, Gi, Gx, Gd, L): # a walk with controller
   s = b.shape[0]            
   x1out = list()
   x2out = list()
   zmpout = list()
   #acc1out = list()
   prefout = list()
-  #errorOut = list()
+  errorOut = list()
   x = np.matrix(np.zeros((s,1)))
   X = np.linspace(0, end - dt, end*(1/dt))
   Xg = X
@@ -329,12 +340,12 @@ def control(cp_stop, pref, g, z_h, dt, N, end, error, plotarea, A, b, c, Gi, Gx,
     for t2 in range(0, N):
       s += Gd[t2] * pref(t+t2*dt)
     u = -Gi * v - Gx * x - s
-    x = A * x + b * u + L * e(error,t)
+    x = A * x + b * u + L * e(error,singleError,t)
     v = v + c * x - pref(t)
     x1out.append(x[0].item())
     x2out.append(x[3].item())
     zmpout.append((c * x).item())#
-    #errorOut.append(e(error,t)[0].item()+0.1)
+    errorOut.append(e(error,singleError,t)[0].item()+0.1)
     #acc1out.append((x[2]).item())
     prefout.append(pref(t))
 
@@ -374,7 +385,7 @@ def control(cp_stop, pref, g, z_h, dt, N, end, error, plotarea, A, b, c, Gi, Gx,
   plotarea.legend(prop={'size':26}, borderpad=0.1, loc="upper left")
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
-  plotarea.set_ylim([-0.15, 0.15])  
+  #plotarea.set_ylim([-0.15, 0.15])  
 
 def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   x = np.matrix(np.zeros((6,1)))
@@ -392,24 +403,30 @@ def sim(dt, end, A, b, c, plotarea): # Just a simple demo
 
   plotarea.plot(X, x1, linewidth=2, label="$c_{1}$")
   plotarea.plot(X, x2, linewidth=2, label="$c_{2}$")
-  plotarea.legend(prop={'size':11}, borderpad=0.1, loc="lower right")
+  plotarea.legend(prop={'size':20}, borderpad=0.1, loc="lower right")
   plotarea.set_xlabel('Time [s]')
   plotarea.set_ylabel('Position (y) [m]')
 
-def e(error, t): #Error
-#  if t >=2 and t<2.1:
-#    return error
-  if t>=2:
-    randomError = np.matrix(np.zeros((3, 1)))
-    for i in range(len(error)):
-        randomError[i] = error[i]* random.uniform(0, 1)
-    if t - sp.floor(t) < 0.5:
-        return -randomError
-    else:
-        return randomError
-    
+def e(error, singleError,t): #Error
+  if singleError == 1:
+      if (t >=2 and t<2.02) or (t >=4 and t<4.02):
+          if t - sp.floor(t) < 0.5:
+              return -error
+          else:
+              return error
+      else:
+          return np.matrix([0.0, 0.0, 0.0]).transpose()
   else:
-    return np.matrix([0.0, 0.0, 0.0]).transpose()
+      if t>=2:
+          randomError = np.matrix(np.zeros((3, 1)))
+          for i in range(len(error)):
+              randomError[i] = error[i]* random.uniform(0, 1)
+          if t - sp.floor(t) < 0.5:
+              return -randomError
+          else:
+              return randomError
+      else:
+        return np.matrix([0.0, 0.0, 0.0]).transpose()
 
 def pref_y(t):  
   if t < 1:
@@ -495,6 +512,7 @@ class FLIPMApp(tkinter.Frame):
     self.menuCommand.add_command(label = "Load Simulation Default", command = self.onSimDef)
     self.menuCommand.add_command(label = "Controller", command = self.onController)
     self.menuCommand.add_command(label = "Load Controller Default", command = self.onControllerDef)
+    self.menuCommand.add_command(label = "Load FLIPM Default", command = self.onFLIPMDef)
     self.menuBar.add_cascade(label = "File", menu = self.menuFile)
     self.menuBar.add_cascade(label = "Commands", menu = self.menuCommand)
   def createWidgets(self):
@@ -502,6 +520,7 @@ class FLIPMApp(tkinter.Frame):
     notebook.pack()
     self.values = {}
     self.naoIP = ""
+    self.dimension = 1
     self.controlframe = tkinter.Frame(self)
     self.controlframe.pack(side = "left", fill = "both")
     self.addValue(self.controlframe, "Small Mass", 0.000000001, 100, 0.1)
@@ -520,6 +539,7 @@ class FLIPMApp(tkinter.Frame):
     self.observerframe = tkinter.Frame(self)
     self.observerframe.pack(side = "left", fill = "both")
     self.values["Ql"] = MatrixInput(self.observerframe,"Ql", 6, 6, 10**10, 10**10, 100)
+    self.addValue(self.observerframe, "RO_Multiplikator", 1, 10**20, 1)
     self.values["RO"] = MatrixInput(self.observerframe,"RO", 3, 3, 10**-10, 10**20, 100)
     self.values["e"] = MatrixInput(self.observerframe,"Error", 3, 1, -10**3, 10**3, 0.001)
     
@@ -528,9 +548,25 @@ class FLIPMApp(tkinter.Frame):
     ###########
     frame = tkinter.Frame(self.observerframe)
     frame.pack(fill = "x")
+    
+    var1 = tkinter.IntVar()
+    c = tkinter.Checkbutton(frame, text="FLIPM NEW", variable=var1)
+    c.pack(fill = "x")
+    self.values["flipmNew"] = var1 
+    
+    var = tkinter.IntVar()
+    c = tkinter.Checkbutton(frame, text="Single Error", variable=var)
+    c.pack(fill = "x")
+    self.values["SingleError"] = var
+
+    var2 = tkinter.IntVar()
+    c = tkinter.Checkbutton(frame, text="X", variable=var2)
+    c.pack(fill = "x")  
+    self.values["Dimension"] = var2
+    
     #b = tkinter.Button(frame, text="Load Controller Default", command=self.onControllerDef)
     #b.pack(fill = "x")
-    b = tkinter.Button(frame, text="Simulate", command=self.onController)
+    b = tkinter.Button(frame, text="Controller", command=self.onController)
     b.pack(fill = "x")
     l = tkinter.Label(frame, text="", height=5)
     l.pack()
@@ -543,7 +579,9 @@ class FLIPMApp(tkinter.Frame):
     frame.pack(fill = "x")
     #b = tkinter.Button(frame, text="Load Controller Default", command=self.onControllerDef)
     #b.pack(fill = "x")
-    b = tkinter.Button(frame, text="Simulate", command=self.onController)
+    b = tkinter.Button(frame, text="Simulate", command=self.onSim)
+    b.pack(fill = "x")
+    b = tkinter.Button(frame, text="Controller", command=self.onController)
     b.pack(fill = "x")  
     l = tkinter.Label(frame, text="", height=5)
     l.pack()
@@ -562,7 +600,7 @@ class FLIPMApp(tkinter.Frame):
     txt = tkinter.Label(frame)
     txt["text"] = "NaoIP"
     txt.pack(side = "left", fill = "x")
-    v = tkinter.StringVar(value='192.168.101.109')
+    v = tkinter.StringVar(value='192.168.100.106')
     s = tkinter.Entry(frame, textvariable = v)
     s.pack(side = "right", fill = "x")   
     self.naoIP = v
@@ -571,6 +609,19 @@ class FLIPMApp(tkinter.Frame):
     buttonframe.pack(fill = "x")
     b = tkinter.Button(buttonframe, text="Send Gains to Nao", command=self.connectSSH)
     b.pack(fill = "x")
+
+    buttonframe = tkinter.Frame(self.naoframe)
+    buttonframe.pack(fill = "x")
+    b = tkinter.Button(buttonframe, text="Send Gains to Folder", command=self.sendGainsToFolder)
+    b.pack(fill = "x")    
+
+    buttonframe = tkinter.Frame(self.naoframe)
+    buttonframe.pack(fill = "x")
+    b = tkinter.Button(buttonframe, text="Send Gains to Default", command=self.sendGainsToDefault)
+    b.pack(fill = "x")        
+    
+    c = tkinter.Checkbutton(frame, text="X", variable=var2)
+    c.pack(fill = "x")  
     
     self.textbox = tkinter.Text(self.naoframe)
     self.textbox.pack(fill = "x")
@@ -595,10 +646,11 @@ class FLIPMApp(tkinter.Frame):
     notebook.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=1)
 
   def loadFLIPM(self):
-    with open('flipmValues.txt') as f:
+    folder =  tkinter.filedialog.askdirectory()
+    with open(folder + '/flipmValues.txt') as f:
         load = f.read().splitlines()   
-    Ql = np.loadtxt('flipmOberverQl.txt')
-    RO = np.loadtxt('flipmOberverRO.txt')
+    Ql = np.loadtxt(folder + '/flipmOberverQl.txt')
+    RO = np.loadtxt(folder + '/flipmOberverRO.txt')
  
     load.insert(10,Ql)
     load.insert(11,RO)
@@ -608,20 +660,21 @@ class FLIPMApp(tkinter.Frame):
   def saveFLIPM(self):
     save = getValues(self.values)
     if save[0] != 0:
-        f = open('flipmValues.txt','w')
+        folder =  tkinter.filedialog.askdirectory()
+        f = open( folder + '/flipmValues.txt','w')
         for i in range(0,len(save)):
             if i != 10 and i != 11:        
                 f.write("%s\n" % save[i])
         f.close()
-        np.savetxt("flipmOberverQl.txt", save[10])
-        np.savetxt("flipmOberverRO.txt", save[11])
+        np.savetxt(folder + "/flipmOberverQl.txt", save[10])
+        np.savetxt(folder + "/flipmOberverRO.txt", save[11])
         print("Gains saved!")
     
 
   def onSave(self): # m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, R0, N
     f = tkinter.filedialog.asksaveasfile()
     v = getValues(self.values)
-    g = flipm_gains(*v[:13]) # A, b, c, Gi, Gx, Gd    
+    g = flipm_gains(self.values["flipmNew"].get(),*v[:13]) # A, b, c, Gi, Gx, Gd    
     s = \
 """
 A = {{ content = [{}]; }};
@@ -658,7 +711,7 @@ N = {};
     f.close()
   def onSim(self):
     self.a.cla()
-    A, b, c, *r = flipm_gains(*getValues(self.values)[:13])
+    A, b, c, *r = flipm_gains(self.values["flipmNew"].get(),*getValues(self.values)[:13])
     sim(self.values["Frame Length"].get(), self.values["End"].get(), A, b, c, self.a)
     self.canvas.show()
   def onControl3D(self):
@@ -667,12 +720,17 @@ N = {};
   def onController(self, export = False):
     self.a.cla();
     try:
-        control(0, pref_y, self.values["Gravity"].get(),self.values["Height"].get(), self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.values["e"].getMatrix(), self.a, *flipm_gains(*getValues(self.values)[:13]))
+        if  self.values["Dimension"].get() == 0 :
+            control(0, pref_y, self.values["Gravity"].get(),self.values["Height"].get(), self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.values["e"].getMatrix(), self.values["SingleError"].get(), self.a, *flipm_gains(self.values["flipmNew"].get(),*getValues(self.values)[:13]))
+        else :
+            control(0, pref_x, self.values["Gravity"].get(),self.values["Height"].get(), self.values["Frame Length"].get(), int(sp.floor(self.values["N"].get())),  self.values["End"].get(), self.values["e"].getMatrix(), self.values["SingleError"].get(), self.a, *flipm_gains(self.values["flipmNew"].get(),*getValues(self.values)[:13]))
         self.canvas.show()
     except ValueError as err:
         print(err)
   def onControllerDef(self):
     self.setValues(*controllerDefault)
+  def onFLIPMDef(self):
+    self.setValues(*flipmDefault)
   def onSimDef(self):
     self.setValues(*simDefault)
   def setValues(self, m, M, g, z_h, dt, D, E, Qe, Qx, R, Ql, RO, N, end):
@@ -691,22 +749,10 @@ N = {};
     self.values["N"].set(N)
     self.values["End"].set(end)
 
-  def connectSSH(self):
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    host = self.naoIP.get()
-    self.printTextbox("Connect to " + host)
-    port = 22
-    try:
-        ssh.connect(host, port=port,  username='root', allow_agent=True, timeout=5)
-        self.printTextbox("SSH-Verbindung erfolgreich!")
-
-        ftp = ssh.open_sftp()
-        self.printTextbox("FTP-Verbindung erfolgreich!")
-        file=ftp.file('/var/persistent/home/nao/Config.Arne_FLIPM/Robots/Default/FLIPM.cfg', "w", -1)
-        v = getValues(self.values)
-        g = gains(*v[:13]) # A, b, c, Gi, Gx, Gd, L
-        s = \
+  def getFormattedValues(self):
+      v = getValues(self.values)
+      g = flipm_gains(self.values["flipmNew"].get(),*v[:13]) # A, b, c, Gi, Gx, Gd, L
+      s = \
 """
 A = {{ content = [{}]; }};
 b = {{ content = [{}]; }};
@@ -744,10 +790,62 @@ N = {};
            float(v[8]), # Qx
            float(v[9]), # R
            float(v[12]),) # N
+      return s
+
+  def sendGainsToFolder(self):
+    folder =  tkinter.filedialog.askdirectory()
+    if self.values["Dimension"].get() == 1:    
+        f1 = open( folder + '/FLIPMObsvX.cfg','w')
+        f2 = open( folder + '/FLIPMContX.cfg','w')
+    else:
+        f1 = open( folder + '/FLIPMObsvY.cfg','w')
+        f2 = open( folder + '/FLIPMContY.cfg','w')
+    s = self.getFormattedValues()
+    f1.write(s)
+    f2.write(s)
+    self.printTextbox("Send Gains to " + folder)
+    
+  def sendGainsToDefault(self):
+    folder = "D:\\Bachelorarbeit\\NDevils\\NDevils\\Config\\Robots\\Default";
+    if self.values["Dimension"].get() == 1:    
+        f1 = open( folder + '/FLIPMObsvX.cfg','w')
+        f2 = open( folder + '/FLIPMContX.cfg','w')
+    else:
+        f1 = open( folder + '/FLIPMObsvY.cfg','w')
+        f2 = open( folder + '/FLIPMContY.cfg','w')
+    s = self.getFormattedValues()
+    f1.write(s)
+    f2.write(s)
+    self.printTextbox("Send Gains to " + folder)
+    
+  def connectSSH(self):
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    host = self.naoIP.get()
+    self.printTextbox("Connect to " + host)
+    port = 22
+    try:
+        ssh.connect(host, port=port,  username='root', allow_agent=True, timeout=3)
+        self.printTextbox("SSH-Verbindung erfolgreich!")
+
+        ftp = ssh.open_sftp()
+        self.printTextbox("FTP-Verbindung erfolgreich!")
+        if self.values["Dimension"].get() == 1:
+            self.printTextbox("Send Gains for X!")
+            fileObsv=ftp.file('/var/persistent/home/nao/Config/Robots/Default/FLIPMObsvX.cfg', "w", -1)
+            fileCont=ftp.file('/var/persistent/home/nao/Config/Robots/Default/FLIPMContX.cfg', "w", -1)
+        else:
+            self.printTextbox("Send Gains for Y!")
+            fileObsv=ftp.file('/var/persistent/home/nao/Config/Robots/Default/FLIPMObsvY.cfg', "w", -1)
+            fileCont=ftp.file('/var/persistent/home/nao/Config/Robots/Default/FLIPMContY.cfg', "w", -1)
         
-        file.write(s)
+        s = self.getFormattedValues()
+        
+        fileObsv.write(s)
+        fileCont.write(s)
         self.printTextbox("Gains erfolgreich übertragen!")  
-        file.flush()
+        fileObsv.flush()
+        fileCont.flush()
         ftp.close()
         self.printTextbox("FTP-Verbindung beendet!")   
         ssh.close()
@@ -757,7 +855,9 @@ N = {};
         self.printTextbox("Connection Failed!")
         print(error)
         
+        
   def printTextbox(self, text):
     self.textbox.insert(tkinter.END, time.strftime('%X') + " - " + text + "\n")
+    self.textbox.see(tkinter.END)
     
 main()
