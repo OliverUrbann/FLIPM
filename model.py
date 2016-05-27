@@ -3,31 +3,42 @@
 # Requirements: Python 3.4+, scipy, numpy, matplotlib, tkinter
 # Usage:        python model.py
 #
-# This script is the implementation of the FLIP model as proposed by
-# Urbann et al. [1]. Details about the gains used in the GUI can be
-# found in [1] and [2].
+# Note:         It can be quite tricky to get this script fully 
+#               running as most distributions use buggy packages
+#               and versions. In case of crashes use the recommended
+#               distro version.
+#               Recommended for OS X: Anaconda 3.18.8 x64
+#               Recommended for Windows: Anaconda 
 #
-# Two functions can be executed:
+# This script is the implementation of the FLIP model utilized by a 
+# preview controller as proposed by Urbann et al. [1]. Details about 
+# the gains used in the GUI can be found in [1] and [2].
 #
-# Menu Commands->Simulate for an example of the model. At 0.5s a
-# force is applied such that both masses begin to oscillate. Nothing 
-# else happens here.
+# Additionally, it contains also the Boundedness controller as 
+# proposed by Lanari et al. [3] that utilizes the same FLIPM. This
+# controller can be executed as an iterative version including a
+# capture step and as an analytical version.
 #
-# Menu Commands->Controller runs a walk with a preview controller.
-# Gains for controller are calculate before, using the given values.
+# With this tool, you can run a simulation of the flexible system
+# (Commands->Simulate), run a preview controller 
+# (Commands->Preview Controller) and run the Boundedness Controller
+# in the iterative version (Commands->Boundedness Controller (iterative))
+# and in the analytical closed form 
+# (Commands->Boundedness Controller (analytical)). 
+# You can chose your own gains on the left side but I would recommend
+# to load some corresponding default values using Commands->Load...
 #
-# Values like masses, gravity, height, etc. can be selected manually.
-# For a quick simulation or walk default values can be loaded by
-# clicking the corresponding menu item before "Simulate" or 
-# "Controller" is clicked. 
-#
+# All figures except experiments in simulation or on physical robot
+# in [1] and [3] where done using this python tool. You can plot
+# them on your own with Plot->Plot for paper [1] and
+# Plot->Plot for paper [3]. This way it should be easier for you to
+# see how the controller and model was used to get these figures.
+# The result will be pdf documents in the working folder.
+# 
 # Additionally, the gains and the computed controller gains can be
 # saved for an application of the controller implemented on a 
 # physical robot.
 #
-# "python model.py -c" and "python model.py -r" creates figures
-# shown in [1]. Before this can be done run 
-# "mkdir paper && mkdir paper/build". 
 #
 # [1] Flexible Linear Inverted Pendulum Model for Cost-Effective 
 #     Biped Robots
@@ -37,6 +48,10 @@
 # [2] Observer-based biped walking control, a sensor fusion approach
 #     Oliver Urbann, Stefan Tasse
 #     Autonomous Robots 35.1 (2013) pp. 37–49. Springer US, 2013
+# [3] Boundedness Approach to Gait Planning for the Flexible Linear 
+#     Inverted Pendulum Model
+#     Leonardo Lanari, Oliver Urbann, Seth Hutchinson, Ingmar Schwarz
+#     RoboCup 2016: Robot World Cup XX, 2017, to appear
 
 import numpy as np
 import scipy as sp
@@ -51,10 +66,10 @@ import sys
 import time
 
 __author__ = "Oliver Urbann"
-__copyright__ = "Copyright 2015, Oliver Urbann"
+__copyright__ = "Copyright 2016, Oliver Urbann"
 __credits__ = ["Oliver Urbann"]
 __license__ = "GPL"
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __maintainer__ = "Oliver Urbann"
 __email__ = "oliver.urbann@tu-dortmund.de"
 __status__ = "Production"
@@ -82,39 +97,19 @@ mpl.rcParams['ps.fonttype'] = 42
 
 # Damping has the same derivation
 
+# Some default values. Format is:
+# 
 simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
+boundednessControllerDefault = (1, 5, 9.81, 0.5, 0.0005, 1000, 200, 0.001, 1000, 10**-10, 100, 3)
+previewControllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100, 5)
 
-# Schwierig zu regeln für Preview, Qx 150, Qe 100
-# Höhere Frequenz hilft hier, aber dauert länger, zb 0.0025 N=400
-# b = 2 einfacher
-lanariControllerDefault = (1, 5, 9.81, 0.5, 0.0005, 1000, 200, 0.001, 1000, 10**-10, 100, 3)
-# tau Problem bei höheren Dämpfungen
-# Qe bei Lanari von 0.0004 ist bei E=200 besser, höhere Frequenzen ebenfalls besser
-controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100, 5)
-
-# Für Tests mit CP
-#controllerDefault = (0.1, 4.5, 9.81, 0.26, 0.005, 10000, 200, 10, 10, 10**-10, 200, 5)
+# For tests with CP
+# previewControllerDefault = (0.1, 4.5, 9.81, 0.26, 0.005, 10000, 200, 10, 10, 10**-10, 200, 5)
 
 
 def main():
   noGui = False
   for arg in sys.argv:
-    if arg == '-c': # Plot figure as shown in [1]
-      fig1 = plt.figure(figsize=(6, 2), dpi=150)
-      ax1 = fig1.add_subplot(111)
-      control(controllerDefault[4], int(sp.floor(controllerDefault[10])), controllerDefault[11], ax1, *flipm_gains(*controllerDefault[:11]))
-      plt.savefig("paper/build/FLIPMex" + ".pdf", format='pdf', bbox_inches='tight')
-      noGui = True
-    if arg == '-r': # Plot another figure shown in [1]
-      fig1 = plt.figure(figsize=(6, 2), dpi=150)
-      ax1 = fig1.add_subplot(111)
-      g = flipm_gains(*simDefault[:11])
-      sim(simDefault[4],simDefault[11], g[0], g[1], g[2], ax1)
-      plt.savefig("paper/build/FLIPMmodel" + ".pdf", format='pdf', bbox_inches='tight')
-      noGui = True
-    if arg == '-b':
-      plotBounded()
-      noGui = True
     if arg.startswith('-l='): # Print gain tables in latex
       m.dump(open(arg[3:] + "A.tex",'w'))
       noGui = True
@@ -124,6 +119,10 @@ def main():
   app = FLIPMApp(root)
   app.mainloop()
  
+
+# This plots the figures of [3] that are obtained using this python code. 
+# The data of the simulations using ODE can be found in the sub directory
+# BoundednessController.
 def plotBounded():
   # Figure for working stopping step
   print("Plotting iterative.pdf")
@@ -191,7 +190,8 @@ def plotBounded():
            ax1)
   plt.savefig("b=200,tau=00025" + ".pdf", format='pdf', bbox_inches='tight')
   
-  return
+  # This will take a lot of time. High frequency of 2 kHz ensures low tracking
+  # error but preview contains a lot of elements then.
   
   print("preview.pdf")
   fig1 = plt.figure(figsize=(5, 2), dpi=150)
@@ -204,6 +204,26 @@ def plotBounded():
   plt.savefig("preview" + ".pdf", format='pdf', bbox_inches='tight')
   
   
+  
+
+# Plot the figures of [1] without the figures of the experiments with
+# physical robot.
+def plotPreview():
+  fig1 = plt.figure(figsize=(6, 2), dpi=150)
+  ax1 = fig1.add_subplot(111)
+  control(0, pref_y, previewControllerDefault[2], 
+                     previewControllerDefault[3], 
+                     previewControllerDefault[4],                 
+                     int(sp.floor(previewControllerDefault[10])),
+                     previewControllerDefault[11], ax1, 
+                     *flipm_gains(*previewControllerDefault[:11]))
+  plt.savefig("FLIPMex" + ".pdf", format='pdf', bbox_inches='tight')
+  
+  fig1 = plt.figure(figsize=(6, 2), dpi=150)
+  ax1 = fig1.add_subplot(111)
+  g = flipm_gains(*simDefault[:11])
+  sim(simDefault[4],simDefault[11], g[0], g[1], g[2], ax1)
+  plt.savefig("FLIPMmodel" + ".pdf", format='pdf', bbox_inches='tight')
   
 def getValues(d):
   return (d["Small Mass"].get(),
@@ -219,6 +239,8 @@ def getValues(d):
           int(sp.floor(d["N"].get())),
           d["End"].get())
           
+
+# State space matrices for a usual LIPM
 def lipm_gains(m, g, z_h, dt, Qe, Qx, R, N):
   gz = g/z_h*dt
   A = np.array(
@@ -231,6 +253,8 @@ def lipm_gains(m, g, z_h, dt, Qe, Qx, R, N):
   c_x2 = np.matrix(np.array([0, 0, 0]))
   return A, b, c, c_x1, c_x2, gains(A, b, c, Qe, Qx, R, N)
   
+# State space matrices for FLIPM based on the LIP. In contrast to flipm_gains()
+# here the ZMP is part of the state and actively controlled (experimental).
 def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   
     DM = D/M
@@ -259,6 +283,10 @@ def flipm_zmp(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
     c_x2 = np.matrix(np.array([0, 0, 0, 0, 1, 0, 0]))
     return A, b, c, c_x1, c_x2, (*gains(A, b, c, Qe, Qx, R, N))
 
+
+
+# Reduced version of the FLIPM with just 4 dimensions. Used for the analytical
+# version of the Boundedness Controller
 def flipm_gains4D(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   # Calculation of controller flipm_gains as explained in [2].
   A = np.array(
@@ -272,6 +300,9 @@ def flipm_gains4D(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   c_x2 = np.matrix(np.array([0, 0, 1, 0]))
   return A, b, c, c_x1, c_x2, (*gains(A, b, c, Qe, Qx, R, N))
 
+
+# State space matrices for FLIPM as proposed in [1]. Used for iterative version
+# of Boundedness Controller and preview controller.
 def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   # Calculation of controller flipm_gains as explained in [2].
   A = np.array(
@@ -287,6 +318,7 @@ def flipm_gains(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   c_x2 = np.matrix(np.array([0, 0, 0, 1, 0, 0]))
   return A, b, c, c_x1, c_x2, (*gains(A, b, c, Qe, Qx, R, N))
   
+# Like flipm_gains() but with different integration method (experimental).
 def flipm_gains2(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   # New try with different integration
   DM = D/M
@@ -312,10 +344,15 @@ def flipm_gains2(m, M, g, z_h, dt, D, E, Qe, Qx, R, N):
   c_x2 = np.matrix(np.array([0, 0, 0, 1, 0, 0]))
   return A, b, c, c_x1, c_x2, (*gains(A, b, c, Qe, Qx, R, N))
   
+
+# Determine the position for a capture step based on FLIPM and the
+# Boundedness Controller [3].
 def FLIPM_CP(x, dx, g, z_h, t = 0):
   om = np.sqrt(g/z_h)
   return np.exp(om * t) * (x + 1/om * dx)
   
+
+# Calculates the gain matrices for the preview controller and observer.
 def gains(A, b, c, Qe, Qx, R, N):
   s = b.shape[0]
   Bt = np.matrix(np.zeros((s+1, 1)))
@@ -391,31 +428,49 @@ class BoundedAnalytical:
     ddc1d = self.ddc1d(T, α, t, g, z_h)
     dddc1d  = self.dddc1d(T, α, t, g, z_h, dt)  
     return m*k**2/b**2 * η - M*m/b * (k/b-b*(m+M)/M*m) * ddc1d + M*m/b * dddc1d
-    
+  
+  """ 
+    This function shows the analytical version of the Boundedness Controller. The output c2d of it is used for the simulation experiments in [3]. Here additionally ud is calculated which is usually used for state space representations x=Ax+Bu. As can be seen, using ud to control the system is not appropriate as the output y reveals the typical form of integrational errors. Thus the approximate system is required to avoid the impulse in dddc1d. Note that for controlling the robot in simulation ud is not required. As it is a position controlled robot, only c2d is required. In contrast to preview control, it is therefore not required to do the integration step x=Ax+Bu using Boundedness Control.
+  """
   def bacontrol(self, A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
-    prefout = list()
-    c1d = list()
-    c2d = list()
-    dc1d = list()
-    ud = list()
-    x1out = list()
-    x2out = list()
-    zmpout = list()
+    # Some empty lists, later filled for plotting
+    prefout = list() # The used ZMP reference, here not used, just for plotting
+    c1d = list() # Position of the large mass, we expect that this will be
+                 # the position of the CoM of the robot if we use c2d as reference
+    c2d = list() # Position of the small mass that is actively controller and
+                 # applied to the robot
+    dc1d = list() # Speed of c1d
+    ud = list() # The output of the controller. On our physical robot we do
+                # not use this value, we directly apply c2d 
+    x1out = list() # Position of large CoM  of a simulation based on FLIPM
+    x2out = list() # Simulated position of small CoM
+    zmpout = list() # The resulting ZMP
     y = np.matrix(0)
     
+    # Set the initial conditions
     x   = np.matrix([[self.c1d(T, α, 0, g, z_h)], 
                      [self.dc1d(T, α, 0, g, z_h)],
                      [self.c1d(T, α, 0, g, z_h)],
                      [self.dc1d(T, α, 0, g, z_h)]])
     
+    # Begin a loop over the time to be simulated
     X = np.linspace(0, end - dt, end*(1/dt))
     ud.append(self.ud(T, α, 0, g, z_h, D, E, M, m, dt))
     for t in X:
+      # Add data for later plotting
       c1d.append(self.c1d(T, α, t, g, z_h))
       c2d.append(c1d[-1] + self.η(T, α, t, g, z_h, D, E, M))
+      
+      # This appends the output of the actual tun of the controller
       ud.append(self.ud(T, α, t, g, z_h, D, E, M, m, dt))
-      prefout.append(pref_lanari(T, α, t))
+      
+      # Just for plotting
+      prefout.append(pref_boundedness(T, α, t))
 
+      # ud[-1] is the controller value of the current time frame. Next two lines
+      # simulate a walk of the robot that is modelled here using FLIPM. It is
+      # not comparable to a dynamics or rigid body simulation like ODE but a
+      # good way to test the system. 
       x   = A  * x   + B  * ud[-1] / m
       y   = C  * x
       
@@ -423,10 +478,8 @@ class BoundedAnalytical:
       x2out.append((x[2]).item())
       zmpout.append(y.item())
       
-      
-    
-    #plotarea.plot(X, c1d, label="$c_1^d$", linestyle="dashed")
-    #plotarea.plot(X, c2d, label="$c_2^d$")
+    plotarea.plot(X, c1d, label="$c_1^d$", linestyle="dashed")
+    plotarea.plot(X, c2d, label="$c_2^d$")
     plotarea.plot(X, x1out, label="$c_{1,y}$", linestyle="dashed")
     plotarea.plot(X, x2out, label="$c_{2,y}$")
     plotarea.plot(X, zmpout, linewidth=2, label="$p_y$")
@@ -435,26 +488,29 @@ class BoundedAnalytical:
     plotarea.set_xlabel('Time [s]')
     plotarea.set_ylabel('Position (y) [m]')
   
-# A controller based on Lanari's work, iterative version
+# A controller based on [3], iterative version
 def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
-  prefout = list()
-  x1out = list()
-  x2out = list()
-  zmpout = list()
-  xcout = list()
-  ycout = list()
-  
+  prefout = list() # The used ZMP reference, here not used, just for plotting
+  x1out = list() # Position of large CoM  of a simulation based on FLIPM
+  x2out = list() # Simulated position of small CoM
+  zmpout = list() # The resulting ZMP
+
+  # Some calculations to set up the controller
   Mb = 1/M + 1/m
   om = np.sqrt(g/z_h)
   xu0 = 0
   for e in zip(T, α):
     xu0 += e[1] * np.exp(-om * e[0])
   xs0 = 0
+  
+  # Set initial conditions for controller (state etc.)
   Xc0 = (xu0 + xs0) / 2
   Xcdot0 = (xu0 - xs0) * om / 2
   XcStar0 = np.matrix([[Xc0], [Xcdot0]])
   x0Flex = np.matrix([[0.], [-0.]])
   
+  # The flexible part of the flexible-cart-series.
+  # We start with the description of the flexible system.
   AFlex = np.matrix([[     0,         1],
                     [-D * Mb,  - E * Mb]]);
   BFlex = np.matrix([[0],
@@ -463,23 +519,23 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
                       E / M + τ / M * (D - Mb * E**2)]);
   DFlex = τ * E / (M * m);
   
+  # Now the inversion to retrieve to controller for the flexible part
   Ai = AFlex - BFlex*CFlex/DFlex;
   Bi = BFlex/DFlex;
   Ci = -CFlex/DFlex;
   Di = 1/DFlex;
   
+  # Here the LIP system is set up. It is the first part of the controller.
   Al = np.matrix([[0, 1], [om**2, 0]])
   Bl = np.matrix([[0], [-om**2]])
   Cl = np.matrix([om**2, 0])
   Dl = np.matrix([-om**2])
-  
-  Ac = np.matrix([[0, 1], [0, 0]])
-  Bc = np.matrix([[0], [1]])
-  Cc = np.matrix([[1, 0]])
-  Dc = np.matrix([-1/om**2])
-  
+
   x_l = XcStar0.copy()
   x_i = x0Flex.copy()
+  
+  # Initialization of the state for the simulation. It must be initialized
+  # with the same values used for the initial state of the controller.
   x   = np.matrix([[XcStar0[0].item()], 
                    [XcStar0[1].item()],
                    [0],
@@ -490,69 +546,58 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
   x_c = XcStar0.copy()
   
   X = np.linspace(0, end - dt, end*(1/dt))
-  X2 = np.linspace(end, end + 5, 5*(1/dt))
-  Xg = np.linspace(0, end + 5, (end+5)*(1/dt))
   u_c = 0
   y_i = 0
   y_l = 0
   y_f = 0
-  y_c = 0
   start = time.time()
+  
+  # Now the control/simulation loop
   for t in X:
-    
+
+    # This simulates an unforeseen and instant stop at 1.8s.
     if t < 1.8:
-      p   = pref_lanari(T, α, t)
+      p   = pref_boundedness(T, α, t)
     if t == 1.8:
       p = FLIPM_CP(x_l[0], x_l[1], g, z_h, dt)
     
+    # First: the LIP part of the controller
     dx_l = Al * x_l + Bl * p
     y_l_t = Cl * x_l + Dl * p
     
+    # Second: the flexible part of the controller
     dx_i = Ai * x_i + Bi * y_l
     y_i_t = Ci * x_i + Di * y_l
-  
-    #dx_f = AFlex * x_f + BFlex * y_i
-    #y_f_t = CFlex * x_f + DFlex * y_i
-    
-    #dx_c = Ac * x_c + Bc * y_f
-    #y_c_t = Cc * x_c + Dc * y_f
-    
+   
+    # Determine the control output. It is the derivative of y_i
     u_c = y_i_t  - y_i
     
+    # Control steps are done, now integrate for next loop.
     x_l += dt * dx_l
     y_l = y_l_t
   
     x_i += dt * dx_i
     y_i = y_i_t
-    
-    #x_f += dt * dx_f
-    #y_f = y_f_t
-    
-    #x_c += dt * dx_c
-    #y_c = y_c_t
-    
+      
+    # Next two lines
+    # simulate a walk of the robot that is modelled here using FLIPM. It is
+    # not comparable to a dynamics or rigid body simulation like ODE but a
+    # good way to test the system. 
     x   = A  * x   + B  * u_c / m / dt
     y   = C  * x
 
     x1out.append((x[0]).item())
     x2out.append((x[3]).item())
     zmpout.append(y.item())
-    #xcout.append((x_c[0]).item())
-    #ycout.append(y_c.item())
     prefout.append(p)
     
   end = time.time()
   print("Time taken for bounded controll:" + str(end - start))
   cp = FLIPM_CP(x[0], x[1], g, z_h, dt)
-  #for t in X2:
-    
-    
+
   plotarea.plot(X, x1out, label="$c_{1,y}^d$", linestyle="dashed")
   plotarea.plot(X, x2out, label="$c_{2,y}^d$")
-  #plotarea.plot(X, xcout, label="$c_{1,y}$", linestyle="dashed")
-  #plotarea.plot(X, x2out, label="$c_{2,y}$")
   plotarea.plot(X, zmpout, linewidth=2, label="$x_{zmp}$")
-  #plotarea.plot(X, ycout, linewidth=2, label="$p_y$")
   plotarea.plot(X, prefout, linewidth=2, label="$x_{zmp}^d$", linestyle="dashed")
   plotarea.legend(prop={'size':11}, borderpad=0.1)
   plotarea.set_xlabel('Time [s]')
@@ -561,7 +606,8 @@ def bcontrol(A, B, C, end, m, M, g, z_h, dt, D, E, T, α, τ, plotarea):
   return
             
 
-def control(cp_stop, pref, g, z_h, dt, N, end, plotarea, A, b, c, c_x1, c_x2, Gi, Gx, Gd): # a walk with controller
+# A FLIPM walk with a preview controller
+def control(cp_stop, pref, g, z_h, dt, N, end, plotarea, A, b, c, c_x1, c_x2, Gi, Gx, Gd): 
   s = b.shape[0]          
   x1out = list()
   x2out = list()
@@ -657,7 +703,9 @@ def pref_x(t):
     return 0
   return (t // 0.5) / 10
   
-def pref_lanari(T, α, t):
+
+# Converts the given steps to a ZMP trajectory. Better for plotting.
+def pref_boundedness(T, α, t):
   s = 0
   for e in zip(T, α):
     s += e[1] * heaviside(t - e[0])
@@ -669,6 +717,10 @@ def heaviside(t):
 
 
 
+
+# Note that this is not a valid implementation of an impulse and as the
+# example of the analytical boundedness controller shows, it is also not
+# a useful approximation.
 def impulse(t1, t2, dt):
   if abs(t1-t2) < dt/4:
     return 100
@@ -683,8 +735,7 @@ class FLIPMApp(tkinter.Frame):
     master.config(menu = self.menuBar)
     self.fillMenuBar()
     self.pack()
-    self.onLanariControllerDef()
-    self.onAnalyticalBoundednessController()
+
   def addValue(self, text, min, max, inc):
     frame = tkinter.Frame(self.controlframe)
     frame.pack(fill = "x")
@@ -706,17 +757,23 @@ class FLIPMApp(tkinter.Frame):
     
     # Commands menu
     self.menuCommand = tkinter.Menu(self.menuBar)
-    self.menuCommand.add_command(label = "Simulate", command = self.onSim)
+    
     self.menuCommand.add_command(label = "Load Simulation Default", command = self.onSimDef)
-    self.menuCommand.add_command(label = "Controller", command = self.onController)
-    self.menuCommand.add_command(label = "Load Controller Default", command = self.onControllerDef)
-    self.menuCommand.add_command(label = "Load Lanari Controller Default", command = self.onLanariControllerDef)
-    self.menuCommand.add_command(label = "Lanari Controller", command = self.onLanariController)
+    self.menuCommand.add_command(label = "Simulate", command = self.onSim)
+    self.menuCommand.add_separator()
+    
+    self.menuCommand.add_command(label = "Load Preview Controller Default", command = self.onControllerDef)
+    self.menuCommand.add_command(label = "Preview Controller", command = self.onController)
+    self.menuCommand.add_separator()
+    
+    self.menuCommand.add_command(label = "Load Boundedness Controller Default", command = self.onBoundednessControllerDef)
+    self.menuCommand.add_command(label = "Boundedness Controller (iterative)", command = self.onBoundednessController)
     self.menuCommand.add_command(label = "Boundedness Controller (analytical)", command = self.onAnalyticalBoundednessController)
     
     # Plotting menu
     self.menuPlot = tkinter.Menu(self.menuBar)
-    self.menuPlot.add_command(label = "Plot Bounded", command = self.onPlotBounded)
+    self.menuPlot.add_command(label = "Plot for paper [3] (Boundedness Control)", command = self.onPlotBounded)
+    self.menuPlot.add_command(label = "Plot for paper [1] (FLIPM with Preview Control)", command = self.onPlotPreview)
     # Add everything
     self.menuBar.add_cascade(label = "File", menu = self.menuFile)
     self.menuBar.add_cascade(label = "Commands", menu = self.menuCommand)
@@ -782,9 +839,7 @@ class FLIPMApp(tkinter.Frame):
     A, b, c, *r = flipm_gains(*getValues(self.values)[:11])
     sim(self.values["Frame Length"].get(), self.values["End"].get(), A, b, c, self.a)
     self.canvas.show()
-  def onControl3D(self):
-    self.startgl()
-    
+       
   def onController(self, export = False):
     self.a.cla();
     control(0, pref_y, self.values["Gravity"].get(),
@@ -794,7 +849,7 @@ class FLIPMApp(tkinter.Frame):
             self.values["End"].get(), self.a,
             *flipm_gains(*getValues(self.values)[:11]))
     self.canvas.show()
-  def onLanariController(self, export = False):
+  def onBoundednessController(self, export = False):
     self.a.cla();
     A, b, c, *r = flipm_gains(*getValues(self.values)[:11])
     bcontrol(A, b, c, 
@@ -827,18 +882,18 @@ class FLIPMApp(tkinter.Frame):
              self.values["Damper Constant"].get(),
              (0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5),
              (-0.05, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
-             #list([0.5]),
-             #list([-0.05]),
              self.values["Qe"].get(),
              self.a)
     self.canvas.show()
   def onControllerDef(self):
-    self.setValues(*controllerDefault)
-  def onLanariControllerDef(self):
-    self.setValues(*lanariControllerDefault)
+    self.setValues(*previewControllerDefault)
+  def onBoundednessControllerDef(self):
+    self.setValues(*boundednessControllerDefault)
     
   def onPlotBounded(self):
       plotBounded()
+  def onPlotPreview(self):
+      plotPreview()
   def onSimDef(self):
     self.setValues(*simDefault)
   def setValues(self, m, M, g, z_h, dt, D, E, Qe, Qx, R, N, end):
