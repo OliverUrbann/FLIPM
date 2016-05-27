@@ -690,6 +690,8 @@ def sim(dt, end, A, b, c, plotarea): # Just a simple demo
   plotarea.set_ylabel('Position (y) [m]')
   
 
+
+# Returns the referene ZMP at time t for y axis.
 def pref_y(t):
   if t < 1:
     return 0
@@ -698,6 +700,7 @@ def pref_y(t):
   else:
     return 0.05
 
+# Returns the referene ZMP at time t for x axis.
 def pref_x(t):
   if t < 1:
     return 0
