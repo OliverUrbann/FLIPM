@@ -97,8 +97,9 @@ mpl.rcParams['ps.fonttype'] = 42
 
 # Damping has the same derivation
 
-# Some default values. Format is:
-# 
+# Some default values. Format is: Small mass, large mass, gravity, height of CoM,
+# frame length, spring constant, damper constant, Qe/τ, Qx, R, N and duration
+# of simulation. 
 simDefault = (0.1, 1, 9.81, 0.3, 0.01, 1, 0.1, 1, 1, 10**-10, 100, 5)
 boundednessControllerDefault = (1, 5, 9.81, 0.5, 0.0005, 1000, 200, 0.001, 1000, 10**-10, 100, 3)
 previewControllerDefault = (0.1, 4.5, 9.81, 0.26, 0.01, 5000, 200, 1, 10, 10**-10, 100, 5)
@@ -793,7 +794,7 @@ class FLIPMApp(tkinter.Frame):
     self.addValue("Spring Constant", 0.001, 1000000, 0.1)
     self.addValue("Damper Constant", 0.001, 1000000, 0.1)
     self.addValue("Qx", 10**-10, 10**10, 1)
-    self.addValue("Qe", 10**-10, 10**10, 1)
+    self.addValue("Qe/τ", 10**-10, 10**10, 1)
     self.addValue("R", 10**-10, 10**10, 1)
     self.addValue("N", 1, 1000, 1)
     self.addValue("End", 0, 100, 0.5)    
