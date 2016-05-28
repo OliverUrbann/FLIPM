@@ -8,8 +8,8 @@ int heaviside(float t)
 
 float eta(const struct Step steps[], 
           int numOfSteps, 
-					const struct Robot *r, 
-					float t)
+          const struct Robot *r, 
+          float t)
 {
   float om = sqrt(r->g/r->zh);
 	float om2 = om * om;
@@ -24,16 +24,16 @@ float eta(const struct Step steps[],
     else
       eta +=  _l * om2 * 0.5 * r->M / (r->k + r->b*om) * (exp(-r->k/r->b*(t-_t)) 
               - exp(-(r->k/r->b*t+om*_t)))
-							- _l * om2 * 0.5 * r->M / (r->k - r->b*om) * (exp(-om*(t-_t))
-						  - exp(-r->k/r->b*(t-_t)));
+              - _l * om2 * 0.5 * r->M / (r->k - r->b*om) * (exp(-om*(t-_t))
+              - exp(-r->k/r->b*(t-_t)));
   }
   return eta;
 }
 
 float dc1d(const struct Step steps[], 
-					 int numOfSteps, 
-					 const struct Robot *r,
-					 float t)
+           int numOfSteps, 
+           const struct Robot *r,
+           float t)
 {
   float om = sqrt(r->g/r->zh);
   float dc1d = 0;
@@ -49,23 +49,40 @@ float dc1d(const struct Step steps[],
   return dc1d;
 }
 
-float c1d(const std::vector<float> &T, const std::vector<float> &alpha, float t, float g, float z_h)
+float c1d(const struct Step steps[], 
+          int numOfSteps,
+          const struct Robot *r,
+          float t)
 {
-  float om = sqrt(g/z_h);
+  float om = sqrt(r->g/r->zh);
   float c1d = 0;
-  for (int i = 0; i < T.size(); i++)
+  for (int i = 0; i < numOfSteps; i++)
   {
-    float curT = T[i];
-    float curAlpha = alpha[i];
-    if (t < curT)
-      c1d += curAlpha * 0.5 * exp(om * (t-curT));
+    float _t = steps[i].time;
+    float _l = steps[i].length;
+    if (t < _t)
+      c1d += _l * 0.5 * exp(om * (t-_t));
     else
-      c1d += curAlpha * 0.5 * (2 - exp(-om * (t-curT)));
+      c1d += _l * 0.5 * (2 - exp(-om * (t-_t)));
   }
   return c1d;
 }
 
-void boundednessController(struct Vec *v, const struct Robot *r)
+float controller(const struct Robot *r, const struct Step steps[],
+                 int numOfSteps, float t)
 {
-	
+  float _c1d = c1d(steps, numOfSteps, r, t);
+  float _eta = eta(steps, numOfSteps, r, t);
+  float p = _c1d + _eta;
+  return p;
+}
+
+void boundednessController(struct Vec *v, 
+                           const struct Robot *r, 
+                           int numOfSteps,
+                           const struct Step steps[2][numOfSteps],
+                           float t)
+{
+  v->x = controller(r, steps[X], numOfSteps, t);
+  v->y = controller(r, steps[Y], numOfSteps, t);
 }
