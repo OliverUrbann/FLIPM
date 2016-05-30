@@ -1,5 +1,5 @@
 #pragma once
-enum {X, Y};
+enum {X, Y, numOfDims};
 
 struct Vec
 {
@@ -21,4 +21,9 @@ void boundednessController(struct Vec *v,
                            int numOfSteps,
                            const struct Step steps[2][numOfSteps],
                            float t);
-
+													 
+void boundednessCapturePoint(struct Vec *v, 
+                             const struct Robot *r, 
+                             int numOfSteps,
+                             const struct Step steps[2][numOfSteps],
+                             float t);
