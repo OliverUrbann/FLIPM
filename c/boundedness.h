@@ -19,11 +19,11 @@ struct Step
 void boundednessController(struct Vec *v, 
                            const struct Robot *r, 
                            int numOfSteps,
-                           const struct Step steps[2][numOfSteps],
+                           struct Step steps[numOfDims][numOfSteps],
                            float t);
 													 
 void boundednessCapturePoint(struct Vec *v, 
                              const struct Robot *r, 
                              int numOfSteps,
-                             const struct Step steps[2][numOfSteps],
+                             struct Step steps[numOfDims][numOfSteps],
                              float t);

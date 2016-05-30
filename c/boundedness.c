@@ -80,20 +80,20 @@ float controller(const struct Robot *r, const struct Step steps[],
 float capturePoint(const struct Robot *r, const struct Step steps[],
                    int numOfSteps,        float t)
 {
-	float curAbsPos = 0;
+  float curAbsPos = 0;
   for (int i; i < numOfSteps && steps[i].time < t; i++)
-		curAbsPos += steps[i].length;	
+    curAbsPos += steps[i].length;	
   float om = sqrt(r->g/r->zh);
-	float _c1d = c1d(steps, numOfSteps, r, t);
-	float _dc1d = c1d(steps, numOfSteps, r, t);
+  float _c1d = c1d(steps, numOfSteps, r, t);
+  float _dc1d = c1d(steps, numOfSteps, r, t);
   float cpStepLen = _c1d + 1/om * _dc1d - curAbsPos;
-	return cpStepLen;									 
+  return cpStepLen;									 
 }
 
 void boundednessController(struct Vec *v, 
                            const struct Robot *r, 
                            int numOfSteps,
-                           const struct Step steps[2][numOfSteps],
+                           struct Step steps[2][numOfSteps],
                            float t)
 {
   v->x = controller(r, steps[X], numOfSteps, t);
@@ -103,7 +103,7 @@ void boundednessController(struct Vec *v,
 void boundednessCapturePoint(struct Vec *v, 
                              const struct Robot *r, 
                              int numOfSteps,
-                             const struct Step steps[2][numOfSteps],
+                             struct Step steps[2][numOfSteps],
                              float t)										
 {
   v->x = capturePoint(r, steps[X], numOfSteps, t);
