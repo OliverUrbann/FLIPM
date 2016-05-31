@@ -7,7 +7,7 @@ int main()
 	const int numOfSteps = 10;       // Total number of steps used here.
 	const float stepDuration = 0.5f; // The duration of a step in seconds.
 	struct Step steps[numOfDims][numOfSteps];
-	struct Vec pos;
+	struct Vec pos, posSum;
 	struct Robot robot;
 	
 	robot.zh = 0.26;
@@ -18,8 +18,8 @@ int main()
 	robot.M = 4.5;
 	 
 	// Create file for data to be plotting using gnuplot
-	FILE * c2dY = fopen("c2dY", "w"); // Desired y position of small mass
-	
+	FILE * data = fopen("data", "w"); // Desired y position of small mass
+	fprintf(data, "Time c2dY pRefY\n");
 	for (int i = 0; i < numOfSteps; i++)
 	{
 		steps[X][i].length = 0.1;
@@ -28,6 +28,8 @@ int main()
 		steps[Y][i].length = (1 - 2 * ((i+1)%2)) * 0.1;
 		steps[Y][i].time = stepDuration;
 	}
+	
+	posSum.x = posSum.y = 0;
 	
 	// This is the main loop in on a walking robot.
 	for (float t = 0; t < numOfSteps * stepDuration; t += robot.dt)
@@ -38,10 +40,12 @@ int main()
 		// frequency is 100 Hz.
 		
 		boundednessController(&pos, &robot, numOfSteps, steps, t);
-		fprintf(c2dY, "%lf %lf \n", t, pos.y); // Write data to plot
+		
+		posSum.y += steps[Y][t/robot.dt].length;
+		fprintf(data, "%lf %lf %lf\n", t, pos.y, posSum.y); // Write data to plot
 	}
 	
-	fclose(c2dY);
+	fclose(data);
 	
 	printf("Starting gnuplot...\n");
 	system("gnuplot plot");

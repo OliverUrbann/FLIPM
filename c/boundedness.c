@@ -81,7 +81,7 @@ float capturePoint(const struct Robot *r, const struct Step steps[],
                    int numOfSteps,        float t)
 {
   float curAbsPos = 0;
-  for (int i; i < numOfSteps && steps[i].time < t; i++)
+  for (int i = 0; i < numOfSteps && steps[i].time < t; i++)
     curAbsPos += steps[i].length;	
   float om = sqrt(r->g/r->zh);
   float _c1d = c1d(steps, numOfSteps, r, t);
