@@ -1,2 +1,11 @@
+CC        = gcc
+OS        = $(shell uname)
+CFLAGS    = -Wall -I. -o boundedness
+LDFLAGS   = -lm
+
+ifneq "$(OS)" "AmigaOS"
+CFLAGS    += -std=c99
+endif
+
 boundedness:	main.c boundedness.c boundedness.h
-	gcc -std=c99 -Wall -o boundedness main.c boundedness.c -I. -lm
+	gcc $(CFLAGS) main.c boundedness.c $(LDFLAGS)

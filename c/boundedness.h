@@ -1,4 +1,6 @@
-#pragma once
+#ifndef _BOUNDEDNESS_H
+#define _BOUNDEDNESS_H
+
 enum {X, Y, numOfDims};
 
 struct Vec
@@ -19,11 +21,12 @@ struct Step
 void boundednessController(struct Vec *v, 
                            const struct Robot *r, 
                            int numOfSteps,
-                           struct Step steps[numOfDims][numOfSteps],
+                           struct Step *steps[numOfDims],
                            float t);
 													 
 void boundednessCapturePoint(struct Vec *v, 
                              const struct Robot *r, 
                              int numOfSteps,
-                             struct Step steps[numOfDims][numOfSteps],
+                             struct Step *steps[numOfDims],
                              float t);
+#endif
